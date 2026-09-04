@@ -1,57 +1,32 @@
-"use client";
+'use client';
 
-import { useCallback, useEffect, useState } from "react";
-import { RefreshCcw, ScanLine } from "lucide-react";
-import { useRouter } from "next/navigation";
-import LoginNoticeDialog from "../components/LoginNoticeDialog";
-import { completeLogin, getQRCode, pollScanStatus } from "../lib/api";
-import useStore from "../lib/store";
-
-const SHUTDOWN_NOTICE = "上南航有福了哈哈哈😂😂😂😂";
+import { useCallback, useEffect, useState } from 'react';
+import { RefreshCcw, ScanLine } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { completeLogin, getQRCode, pollScanStatus } from '../lib/api';
+import useStore from '../lib/store';
 
 export default function LoginPage() {
   const router = useRouter();
   const { hasHydrated, isLoggedIn, login } = useStore();
   const [qrcode, setQrcode] = useState(null);
-  const [status, setStatus] = useState("loading");
-  const [message, setMessage] = useState("");
+  const [status, setStatus] = useState('loading');
+  const [message, setMessage] = useState('');
   const [polling, setPolling] = useState(false);
-  const [noticeOpen, setNoticeOpen] = useState(true);
-  const closeNotice = useCallback(() => setNoticeOpen(false), []);
-
-  useEffect(() => {
-    if (!hasHydrated || isLoggedIn) return undefined;
-
-    const showShutdownNotice = () => window.alert(SHUTDOWN_NOTICE);
-    const interceptClick = (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-      showShutdownNotice();
-    };
-    const timer = window.setTimeout(showShutdownNotice, 0);
-
-    document.addEventListener("click", interceptClick, true);
-
-    return () => {
-      window.clearTimeout(timer);
-      document.removeEventListener("click", interceptClick, true);
-    };
-  }, [hasHydrated, isLoggedIn]);
 
   const fetchQRCode = useCallback(async () => {
-    setStatus("loading");
-    setMessage("正在生成登录二维码");
+    setStatus('loading');
+    setMessage('正在生成登录二维码');
     setPolling(false);
 
     try {
       const data = await getQRCode();
       setQrcode(data);
-      setStatus("waiting");
-      setMessage("使用微信扫码登录");
+      setStatus('waiting');
+      setMessage('使用微信扫码登录');
       setPolling(true);
     } catch (error) {
-      setStatus("error");
+      setStatus('error');
       setMessage(`二维码获取失败：${error.message}`);
     }
   }, []);
@@ -59,7 +34,7 @@ export default function LoginPage() {
   useEffect(() => {
     if (!hasHydrated) return;
     if (isLoggedIn) {
-      router.replace("/dashboard");
+      router.replace('/dashboard');
       return;
     }
 
@@ -86,12 +61,12 @@ export default function LoginPage() {
         if (cancelled) return;
 
         if (result.status === 404) {
-          setStatus("scanned");
-          setMessage("已扫码，等待手机确认");
+          setStatus('scanned');
+          setMessage('已扫码，等待手机确认');
           schedulePoll();
         } else if (result.status === 405 && result.wx_code) {
-          setStatus("loading");
-          setMessage("正在完成登录");
+          setStatus('loading');
+          setMessage('正在完成登录');
 
           let loginResult;
           try {
@@ -99,32 +74,32 @@ export default function LoginPage() {
           } catch (error) {
             if (cancelled) return;
             setPolling(false);
-            setStatus("error");
+            setStatus('error');
             setMessage(`登录失败：${error.message}`);
             return;
           }
 
           if (loginResult.success) {
             setPolling(false);
-            setStatus("success");
-            setMessage("登录成功");
+            setStatus('success');
+            setMessage('登录成功');
             login(loginResult.data);
-            router.replace("/dashboard");
+            router.replace('/dashboard');
           } else {
             setPolling(false);
-            setStatus("error");
+            setStatus('error');
             setMessage(`登录失败：${loginResult.message}`);
           }
         } else if (result.status === 402 || result.status === 403) {
           setPolling(false);
-          setStatus("error");
+          setStatus('error');
           setMessage(result.message);
         } else {
           schedulePoll();
         }
       } catch {
         if (cancelled) return;
-        setStatus("waiting");
+        setStatus('waiting');
         schedulePoll();
       }
     };
@@ -147,37 +122,24 @@ export default function LoginPage() {
         <h1 className="mega-title">阳光跑</h1>
 
         <div className={`qr-frame ${status}`}>
-          {(status === "waiting" || status === "scanned") && qrcode ? (
-            <img
-              src={qrcode.qrcode_url}
-              alt="微信登录二维码"
-              className="qr-image"
-            />
+          {(status === 'waiting' || status === 'scanned') && qrcode ? (
+            <img src={qrcode.qrcode_url} alt="微信登录二维码" className="qr-image" />
           ) : (
             <div className="qr-placeholder">
-              {status === "success" ? "OK" : status === "error" ? "ERR" : "..."}
+              {status === 'success' ? 'OK' : status === 'error' ? 'ERR' : '...'}
             </div>
           )}
         </div>
 
         <p className={`status-line ${status}`}>{message}</p>
 
-        {status === "error" && (
-          <button
-            className="action-button secondary"
-            onClick={fetchQRCode}
-            type="button"
-          >
+        {status === 'error' && (
+          <button className="action-button secondary" onClick={fetchQRCode} type="button">
             <RefreshCcw size={18} />
             重新获取
           </button>
         )}
       </section>
-
-      <LoginNoticeDialog
-        open={hasHydrated && !isLoggedIn && noticeOpen}
-        onClose={closeNotice}
-      />
     </main>
   );
 }
