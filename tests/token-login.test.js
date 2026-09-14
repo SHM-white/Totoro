@@ -44,7 +44,20 @@ test('invalid credentials, malformed responses and incomplete profiles never pro
   }
 });
 
-test('login route returns uncached verified data and masks unexpected upstream errors', async () => {
+test('upstream connection failures become safe actionable errors', async t => {
+  t.mock.method(console, 'error', () => {});
+  await assert.rejects(loginWithToken('test-token', {
+    fetchImpl: async () => { throw new Error('sensitive-network-detail'); },
+  }), error => {
+    assert.equal(error.status, 502);
+    assert.equal(error.message, '服务器无法连接学生信息接口，请联系管理员检查部署网络');
+    assert.ok(!error.message.includes('sensitive-network-detail'));
+    return true;
+  });
+});
+
+test('login route returns uncached verified data and masks unexpected upstream errors', async t => {
+  t.mock.method(console, 'error', () => {});
   const original = globalThis.fetch;
   try {
     globalThis.fetch = async () => Response.json({ code: 0, obj: profile });
