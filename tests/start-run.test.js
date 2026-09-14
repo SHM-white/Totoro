@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildRunFixture, distanceOfTrack } from '../lib/server/run-regression-data.js';
-import { runRegression } from '../lib/server/run-regression.js';
+import { buildRunFixture, distanceOfTrack } from '../lib/server/run-data.js';
+import { startRun } from '../lib/server/start-run.js';
 
 const task = {
-  taskId: 'paper-1', name: '回归任务', mileage: '3.20', minTime: '10', maxTime: '25', fitDegree: '0.60',
+  taskId: 'paper-1', name: '跑步任务', mileage: '3.20', minTime: '10', maxTime: '25', fitDegree: '0.60',
   runPointList: [],
 };
 const route = {
@@ -35,43 +35,7 @@ test('fixture follows the selected route with realistic mini-program fields', ()
     && (!index || point.timestamp > points[index - 1].timestamp)));
 });
 
-test('mock regression completes the mini-program call sequence without network access', async () => {
-  const result = await runRegression({ task, route, ...identity }, {
-    mode: 'mock', now: new Date('2026-09-14T06:30:00+08:00'),
-    fetchImpl: () => assert.fail('mock mode must not access the network'),
-  });
-  assert.equal(result.mode, 'mock');
-  assert.match(result.scantronId, /^mock-sunrun-/);
-  assert.ok(result.track.pointCount > 250);
-  assert.deepEqual(result.steps.map(step => step.endpoint), [
-    '/wxxcx/platform/camera/currentTimeMillis',
-    '/wxxcx/platform/sunrunFace/selectSunRunStartConfiguration',
-    '/wxxcx/platform/camera/getCameraConfig',
-    '/wxxcx/platform/sunrunFace/selectSunRunRandomConfiguration',
-    '/wxxcx/platform/sunrunFace/startUpNote',
-    '/wxxcx/sunrun/getRunBegin',
-    '/wxxcx/sunrun/getRunPointList',
-    '/wxxcx/sunrun/getRunPointListAbnormal',
-    '/wxxcx/sunrun/sunRunExercises',
-    '/wxxcx/platform/recrecord/sunRunExercisesDetail',
-  ]);
-  assert.ok(result.steps.every(step => step.ok));
-});
-
-test('explicitly enabled regression accepts the original production origin', async () => {
-  let called = false;
-  await assert.rejects(runRegression({ task, route, ...identity }, {
-    mode: 'test', allowTestSubmit: true, baseUrl: 'https://wxxcx.xtotoro.com',
-    fetchImpl: async url => {
-      called = true;
-      assert.equal(new URL(url).origin, 'https://wxxcx.xtotoro.com');
-      return new Response(JSON.stringify({ status: '99', msg: '受控 Token 已拦截' }), { status: 200 });
-    },
-  }), /受控 Token 已拦截/);
-  assert.equal(called, true);
-});
-
-test('test transport sends the same contract to an explicitly enabled non-production origin', async () => {
+test('start run sends the complete mini-program contract', async () => {
   const calls = [];
   const fetchImpl = async (url, options) => {
     const endpoint = new URL(url).pathname;
@@ -91,8 +55,8 @@ test('test transport sends the same contract to an explicitly enabled non-produc
     };
     return new Response(JSON.stringify(replies[endpoint]), { status: 200 });
   };
-  const result = await runRegression({ task, route, ...identity }, {
-    mode: 'test', allowTestSubmit: true, baseUrl: 'https://sunrun-test.example.com', fetchImpl,
+  const result = await startRun({ task, route, ...identity }, {
+    baseUrl: 'https://sunrun-test.example.com', fetchImpl,
     now: new Date('2026-09-14T06:30:00+08:00'),
   });
   assert.equal(result.scantronId, 'test-session-1');
@@ -102,4 +66,37 @@ test('test transport sends the same contract to an explicitly enabled non-produc
   assert.equal(calls[8].body.scantronId, 'test-session-1');
   assert.equal(calls[9].body.pointList.length, result.track.pointCount);
   assert.equal(calls[9].body.scantronId, 'test-session-1');
+  assert.deepEqual(result.steps.map(step => step.endpoint), calls.map(call => call.endpoint));
+});
+
+test('start run rejects invalid origins and incomplete identity before fetching', async () => {
+  const fetchImpl = () => assert.fail('invalid input must not access the network');
+  await assert.rejects(startRun({ task, route, ...identity }, {
+    baseUrl: 'http://sunrun-test.example.com', fetchImpl,
+  }), /HTTPS origin/);
+  await assert.rejects(startRun({ task, route, ...identity }, {
+    baseUrl: 'https://sunrun-test.example.com/path', fetchImpl,
+  }), /HTTPS origin/);
+  await assert.rejects(startRun({ task, route, token: '', stuNumber: 'student-1', schoolCode: 'school-1' }, {
+    baseUrl: 'https://sunrun-test.example.com', fetchImpl,
+  }), /缺少账号资料/);
+});
+
+test('start run stops before creating a session when face verification is required', async () => {
+  const calls = [];
+  const fetchImpl = async url => {
+    const endpoint = new URL(url).pathname;
+    calls.push(endpoint);
+    const result = endpoint.endsWith('selectSunRunStartConfiguration')
+      ? { status: '00', code: '0', body: { sunrunStartFace: '1' } }
+      : endpoint.endsWith('getCameraConfig')
+        ? { status: '00', code: '0', body: { flag: 0 } }
+        : { status: '00', code: '0', body: {} };
+    return new Response(JSON.stringify(result), { status: 200 });
+  };
+  await assert.rejects(startRun({ task, route, ...identity }, {
+    baseUrl: 'https://sunrun-test.example.com', fetchImpl,
+  }), /人脸校验/);
+  assert.equal(calls.length, 5);
+  assert.ok(!calls.includes('/wxxcx/sunrun/getRunBegin'));
 });

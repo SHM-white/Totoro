@@ -5,8 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { LogOut, ListChecks, RefreshCcw } from 'lucide-react';
 import { getRunTasks } from '../../lib/api';
-import RunDebugPanel from '../../components/RunDebugPanel';
-import RunRegressionPanel from '../../components/RunRegressionPanel';
+import StartRunPanel from '../../components/StartRunPanel';
 import useStore from '../../lib/store';
 
 export default function DashboardPage() {
@@ -86,10 +85,7 @@ export default function DashboardPage() {
             </p>
           </div>
         )}
-        {!tasksLoading && task && <RunDebugPanel
-          key={`${task.taskId}:${pointId || task.runPointList[0]?.pointId || ''}:${revision}`}
-          lineId={pointId || task.runPointList[0]?.pointId || ''} />}
-        {!tasksLoading && <RunRegressionPanel task={task} route={route} />}
+        {!tasksLoading && <StartRunPanel task={task} route={route} />}
       </section>
       <Link href="/records" className="wide-link"><ListChecks size={22} />跑步记录</Link>
     </main>

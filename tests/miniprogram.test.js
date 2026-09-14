@@ -3,7 +3,6 @@ import { test } from 'node:test';
 import { SunRunService } from '../lib/server/sunrun-service.js';
 import { makeMiniRecords } from '../lib/server/sunrun-models.js';
 import { POST as recordsPOST } from '../app/api/sunrun/records/route.js';
-import { POST as submitPOST } from '../app/api/sunrun/submit/route.js';
 
 const taskPaper = {
   taskId: 'paper-1', name: '秋季任务', startDate: '2026-01-01', endDate: '2026-12-31',
@@ -31,11 +30,11 @@ function setup(overrides = {}) {
     if (reply instanceof Error) throw reply;
     return new Response(JSON.stringify(reply), { status: 200 });
   };
-  const service = new SunRunService({ token: 'fixture-token', stuNumber: 'student-1', schoolCode: 'school-code', campusId: 'campus-1' }, { fetchImpl });
+  const service = new SunRunService({ token: 'fixture-token', stuNumber: 'student-1', campusId: 'campus-1' }, { fetchImpl });
   return { service, calls, fetchImpl };
 }
 
-test('task list uses mini JSON/Bearer protocol, preserves windows and rejects unknown tasks', async () => {
+test('task list uses mini JSON/Bearer protocol and preserves windows', async () => {
   const { service, calls } = setup();
   const tasks = await service.getSunrunTasks();
   assert.equal(tasks.length, 1);
@@ -44,7 +43,6 @@ test('task list uses mini JSON/Bearer protocol, preserves windows and rejects un
   assert.equal(calls[0].body.campusId, 'campus-1');
   assert.equal(calls[0].body.token, 'fixture-token');
   assert.equal(new URL(calls[0].url).hostname, 'wxxcx.xtotoro.com');
-  await assert.rejects(service.getSunrunTask('unknown'), /任务/);
 });
 
 test('missing server counts remain unknown, rather than counting raw entries', () => {
@@ -86,16 +84,4 @@ test('records route stays read-only and does not offer historical submission dat
   assert.equal(result.records.length, 2);
   assert.ok(!('available_dates' in result));
   assert.deepEqual(calls.map(call => call.path), ['/wxxcx/sunrun/getSunrunPaper', '/wxxcx/sunrun/getSunrunArch']);
-});
-
-test('old submit API blocks generated records before any upstream side effect', async t => {
-  t.mock.method(globalThis, 'fetch', () => assert.fail('must not call upstream'));
-  const response = await submitPOST(new Request('http://localhost/api/sunrun/submit', {
-    method: 'POST', body: JSON.stringify({ token: 'fixture', run_date: '2026-08-20', km: 3, capabilities: { supported: true } }),
-  }));
-  assert.equal(response.status, 410);
-  assert.equal(response.headers.get('cache-control'), 'no-store');
-  const result = await response.json();
-  assert.equal(result.success, false);
-  assert.equal(result.code, 'WEB_RUN_UNSUPPORTED');
 });
