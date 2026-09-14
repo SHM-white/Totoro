@@ -1,144 +1,68 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useState } from 'react';
-import { RefreshCcw, ScanLine } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Eye, EyeOff, KeyRound } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { completeLogin, getQRCode, pollScanStatus } from '../lib/api';
+import { loginWithToken } from '../lib/api';
 import useStore from '../lib/store';
 
 export default function LoginPage() {
   const router = useRouter();
   const { hasHydrated, isLoggedIn, login } = useStore();
-  const [qrcode, setQrcode] = useState(null);
-  const [status, setStatus] = useState('loading');
-  const [message, setMessage] = useState('');
-  const [polling, setPolling] = useState(false);
+  const [token, setToken] = useState('');
+  const [visible, setVisible] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const pending = useRef(false);
 
-  const fetchQRCode = useCallback(async () => {
-    setStatus('loading');
-    setMessage('正在生成登录二维码');
-    setPolling(false);
+  useEffect(() => {
+    if (hasHydrated && isLoggedIn) router.replace('/dashboard');
+  }, [hasHydrated, isLoggedIn, router]);
 
+  async function handleSubmit(event) {
+    event.preventDefault();
+    if (pending.current || !token.trim()) return;
+    pending.current = true;
+    setLoading(true);
+    setError('');
     try {
-      const data = await getQRCode();
-      setQrcode(data);
-      setStatus('waiting');
-      setMessage('使用微信扫码登录');
-      setPolling(true);
-    } catch (error) {
-      setStatus('error');
-      setMessage(`二维码获取失败：${error.message}`);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!hasHydrated) return;
-    if (isLoggedIn) {
+      const result = await loginWithToken(token);
+      if (!result.success) throw new Error(result.message || '登录失败');
+      login(result.data);
+      setToken('');
       router.replace('/dashboard');
-      return;
+    } catch (error) {
+      setError(error.message);
+    } finally {
+      pending.current = false;
+      setLoading(false);
     }
-
-    const timer = window.setTimeout(() => {
-      fetchQRCode();
-    }, 0);
-
-    return () => window.clearTimeout(timer);
-  }, [fetchQRCode, hasHydrated, isLoggedIn, router]);
-
-  useEffect(() => {
-    if (!polling || !qrcode?.uuid) return undefined;
-
-    let cancelled = false;
-    let timer = null;
-
-    const schedulePoll = () => {
-      timer = window.setTimeout(runPoll, 2000);
-    };
-
-    const runPoll = async () => {
-      try {
-        const result = await pollScanStatus(qrcode.uuid);
-        if (cancelled) return;
-
-        if (result.status === 404) {
-          setStatus('scanned');
-          setMessage('已扫码，等待手机确认');
-          schedulePoll();
-        } else if (result.status === 405 && result.wx_code) {
-          setStatus('loading');
-          setMessage('正在完成登录');
-
-          let loginResult;
-          try {
-            loginResult = await completeLogin(result.wx_code);
-          } catch (error) {
-            if (cancelled) return;
-            setPolling(false);
-            setStatus('error');
-            setMessage(`登录失败：${error.message}`);
-            return;
-          }
-
-          if (loginResult.success) {
-            setPolling(false);
-            setStatus('success');
-            setMessage('登录成功');
-            login(loginResult.data);
-            router.replace('/dashboard');
-          } else {
-            setPolling(false);
-            setStatus('error');
-            setMessage(`登录失败：${loginResult.message}`);
-          }
-        } else if (result.status === 402 || result.status === 403) {
-          setPolling(false);
-          setStatus('error');
-          setMessage(result.message);
-        } else {
-          schedulePoll();
-        }
-      } catch {
-        if (cancelled) return;
-        setStatus('waiting');
-        schedulePoll();
-      }
-    };
-
-    runPoll();
-
-    return () => {
-      cancelled = true;
-      if (timer) window.clearTimeout(timer);
-    };
-  }, [login, polling, qrcode, router]);
+  }
 
   return (
     <main className="screen login-screen">
-      <section className="login-shell" aria-label="微信扫码登录">
-        <div className="brand-mark">
-          <ScanLine size={28} strokeWidth={2.4} />
-        </div>
+      <section className="login-shell" aria-label="Token 登录">
+        <div className="brand-mark"><KeyRound size={28} strokeWidth={2.4} /></div>
         <p className="eyebrow">Totoro Sunrun</p>
         <h1 className="mega-title">阳光跑</h1>
-
-        <div className={`qr-frame ${status}`}>
-          {(status === 'waiting' || status === 'scanned') && qrcode ? (
-            <img src={qrcode.qrcode_url} alt="微信登录二维码" className="qr-image" />
-          ) : (
-            <div className="qr-placeholder">
-              {status === 'success' ? 'OK' : status === 'error' ? 'ERR' : '...'}
-            </div>
-          )}
-        </div>
-
-        <p className={`status-line ${status}`}>{message}</p>
-
-        {status === 'error' && (
-          <button className="action-button secondary" onClick={fetchQRCode} type="button">
-            <RefreshCcw size={18} />
-            重新获取
+        <form className="token-form" onSubmit={handleSubmit} aria-busy={loading}>
+          <label htmlFor="login-token">小程序 Token</label>
+          <p id="token-hint" className="token-hint">粘贴 Token，验证后自动获取你的学生信息。</p>
+          <div className="token-input-row">
+            <input id="login-token" type={visible ? 'text' : 'password'} value={token}
+              onChange={event => setToken(event.target.value)} placeholder="输入或粘贴 Token"
+              autoComplete="off" autoCapitalize="none" spellCheck={false} maxLength={16384}
+              aria-describedby="token-hint" required disabled={loading} />
+            <button type="button" className="token-visibility" aria-label={visible ? '隐藏 Token' : '显示 Token'}
+              aria-pressed={visible} onClick={() => setVisible(!visible)}>
+              {visible ? <EyeOff size={20} /> : <Eye size={20} />}
+            </button>
+          </div>
+          {error && <p className="status-line error" role="alert">{error}</p>}
+          <button className="action-button" type="submit" disabled={!hasHydrated || loading || !token.trim()}>
+            {loading ? '正在验证…' : '登录'}
           </button>
-        )}
+        </form>
       </section>
     </main>
   );
