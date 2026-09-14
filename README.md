@@ -8,21 +8,21 @@ Next.js 全栈练习项目，使用 App Router 承载前端页面和 `/api` 服�
 - React
 - Zustand
 - Lucide React
-- npm
+- pnpm
 
 ## 开发
 
 ```bash
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 ## 验证
 
 ```bash
-npm run lint
-npm test
-npm run build
+pnpm lint
+pnpm test
+pnpm build
 ```
 
 ## 部署
@@ -32,6 +32,24 @@ Vercel 使用默认 npm 流程即可：
 - Install Command: `npm install`
 - Build Command: `npm run build`
 - Output: Next.js 默认输出
+
+### 腾讯云生产环境
+
+推送到 `main` 后，[GitHub Actions 工作流](.github/workflows/deploy.yml) 会通过专用 SSH 密钥发布到腾讯云；也可以在 GitHub 的 Actions 页面手动运行。生产环境需要配置以下 Actions secrets：
+
+- `DEPLOY_HOST`：服务器地址
+- `DEPLOY_USER`：部署用户
+- `DEPLOY_SSH_KEY`：专用 Ed25519 私钥
+- `DEPLOY_KNOWN_HOSTS`：经过人工核验的服务器 SSH 公钥记录
+
+服务端的 [`ops/deploy.sh`](ops/deploy.sh) 会串行执行部署，在独立 Git worktree 中安装依赖和构建。构建成功后才原子切换 `/opt/totoro-current` 并重启服务；健康检查失败时自动恢复上一个版本，服务器保留最近三个版本。
+
+查看生产日志：
+
+```bash
+sudo journalctl -u totoro -f
+sudo tail -f /var/log/nginx/error.log
+```
 
 ## 当前功能与平台限制
 
