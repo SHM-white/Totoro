@@ -167,10 +167,8 @@ dialog:focus-visible {
 .icon-text-button,
 .icon-button,
 .text-toggle,
-.back-action,
 .action-button,
-.primary-command,
-.wide-link {
+.primary-command {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -188,8 +186,7 @@ dialog:focus-visible {
 
 .icon-text-button,
 .icon-button,
-.text-toggle,
-.back-action {
+.text-toggle {
   padding: 10px 14px;
   font-size: 15px;
   font-weight: 900;
@@ -203,22 +200,15 @@ dialog:focus-visible {
 .icon-text-button:hover,
 .icon-button:hover,
 .text-toggle:hover,
-.back-action:hover,
 .action-button:hover,
-.primary-command:hover,
-.wide-link:hover {
+.primary-command:hover {
   background: var(--acid);
   box-shadow: 5px 5px 0 var(--line);
   transform: translate(-2px, -2px);
 }
 
 .identity-block,
-.command-panel,
-.progress-block,
-.date-panel,
-.record-card,
-.empty-state,
-.wide-link {
+.command-panel {
   background: var(--paper-2);
   border: 4px solid var(--line);
   box-shadow: var(--shadow);
@@ -234,8 +224,7 @@ dialog:focus-visible {
 }
 
 .identity-block h2,
-.command-panel h2,
-.date-panel h2 {
+.command-panel h2 {
   margin: 0;
   font-size: clamp(30px, 5vw, 56px);
   line-height: 0.95;
@@ -250,9 +239,7 @@ dialog:focus-visible {
   text-align: right;
 }
 
-.command-panel,
-.progress-block,
-.date-panel {
+.command-panel {
   margin-bottom: 28px;
   padding: 28px;
 }
@@ -268,8 +255,7 @@ dialog:focus-visible {
   margin: 22px 0;
 }
 
-.form-grid label,
-.date-panel-footer label {
+.form-grid label {
   display: grid;
   gap: 8px;
   color: var(--muted);
@@ -344,100 +330,8 @@ select {
   background: var(--ink);
 }
 
-.wide-link {
-  width: 100%;
-  min-height: 78px;
-  padding: 18px;
-  font-size: 24px;
-  font-weight: 900;
-}
-
-.back-action {
-  margin-bottom: 16px;
-}
-
-.progress-block h2 {
-  margin: 0;
-  font-size: clamp(90px, 18vw, 180px);
-  line-height: 0.85;
-  letter-spacing: 0;
-}
-
-.progress-block h2 span {
-  color: var(--muted);
-  font-size: 0.36em;
-}
-
-.progress-block p {
-  margin: 12px 0 0;
-  color: var(--muted);
-  font-weight: 800;
-}
-
-.bulk-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 24px;
-}
-
 .limit-note {
   max-width: 680px;
-}
-
-.date-panel-head,
-.date-panel-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.date-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
-  gap: 10px;
-  margin: 24px 0;
-}
-
-.date-chip {
-  display: grid;
-  place-items: center;
-  min-height: 54px;
-  background: var(--paper);
-  border: 3px solid var(--line);
-  cursor: pointer;
-  font-weight: 900;
-}
-
-.date-chip.selected {
-  background: var(--acid);
-}
-
-.date-chip input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-}
-
-.date-panel-footer label {
-  width: min(180px, 100%);
-}
-
-.empty-state {
-  margin-bottom: 24px;
-  padding: 28px;
-  font-size: 28px;
-  font-weight: 900;
-  text-align: center;
-}
-
-.records-list {
-  display: grid;
-  gap: 16px;
 }
 
 .markdown-dialog {
@@ -634,53 +528,6 @@ select {
   border: 3px solid var(--line);
 }
 
-.record-card {
-  display: grid;
-  grid-template-columns: 220px 1fr;
-  gap: 20px;
-  padding: 20px;
-}
-
-.record-date {
-  margin: 0 0 10px;
-  font-size: 28px;
-  font-weight: 900;
-  line-height: 1;
-}
-
-.status-pill {
-  display: inline-flex;
-  padding: 6px 9px;
-  color: var(--paper-2);
-  background: var(--signal);
-  font-size: 13px;
-  font-weight: 900;
-}
-
-.status-pill.success {
-  background: var(--good);
-}
-
-dl {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  margin: 0;
-}
-
-dt {
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 900;
-  text-transform: uppercase;
-}
-
-dd {
-  margin: 4px 0 0;
-  font-size: 22px;
-  font-weight: 900;
-}
-
 @media (max-width: 720px) {
   .screen {
     padding: 22px;
@@ -688,8 +535,6 @@ dd {
 
   .top-strip,
   .identity-block,
-  .date-panel-head,
-  .date-panel-footer,
   .markdown-dialog-actions {
     align-items: stretch;
     flex-direction: column;
@@ -699,9 +544,7 @@ dd {
     text-align: left;
   }
 
-  .form-grid,
-  .record-card,
-  dl {
+  .form-grid {
     grid-template-columns: 1fr;
   }
 

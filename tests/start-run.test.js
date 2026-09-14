@@ -100,3 +100,28 @@ test('start run stops before creating a session when face verification is requir
   assert.equal(calls.length, 5);
   assert.ok(!calls.includes('/wxxcx/sunrun/getRunBegin'));
 });
+
+test('start run switches to the fallback origin for the rest of the workflow', async t => {
+  t.mock.method(console, 'error', () => {});
+  const hosts = [];
+  const fetchImpl = async url => {
+    const parsed = new URL(url);
+    hosts.push(parsed.hostname);
+    if (parsed.hostname === 'wxxcx.xtotoro.com') throw new TypeError('fetch failed');
+    const result = parsed.pathname.endsWith('selectSunRunStartConfiguration')
+      ? { status: '00', code: '0', body: { sunrunStartFace: '1' } }
+      : parsed.pathname.endsWith('getCameraConfig')
+        ? { status: '00', code: '0', body: { flag: 0 } }
+        : { status: '00', code: '0', body: {} };
+    return Response.json(result);
+  };
+  await assert.rejects(startRun({ task, route, ...identity }, { fetchImpl }), /人脸校验/);
+  assert.deepEqual(hosts, [
+    'wxxcx.xtotoro.com',
+    'app.xtotoro.com',
+    'app.xtotoro.com',
+    'app.xtotoro.com',
+    'app.xtotoro.com',
+    'app.xtotoro.com',
+  ]);
+});

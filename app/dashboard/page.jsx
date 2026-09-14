@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { LogOut, ListChecks, RefreshCcw } from 'lucide-react';
+import { LogOut, RefreshCcw } from 'lucide-react';
 import { getRunTasks } from '../../lib/api';
 import StartRunPanel from '../../components/StartRunPanel';
 import useStore from '../../lib/store';
@@ -87,7 +86,6 @@ export default function DashboardPage() {
         )}
         {!tasksLoading && <StartRunPanel task={task} route={route} />}
       </section>
-      <Link href="/records" className="wide-link"><ListChecks size={22} />跑步记录</Link>
     </main>
   );
 }

@@ -39,15 +39,14 @@ Vercel 使用默认 npm 流程即可：
 
 - 输入小程序 Token 登录，支持 Bearer 前缀；GetStudentInfoByToken 校验并获取学生资料。
 - getSunrunPaper 获取任务、路线、任务周期、里程与用时要求。
-- getSunrunArch 查询成绩，显示上游状态与完成次数。
 - 网页尚未实现等价的微信后台定位、运动分析、人脸与摄像头采集；学校要求这些校验时，开始跑步会在创建场次前停止。批量接口与旧提交入口已删除。
 - 提供“开始跑步”入口，按所选任务与路线执行准备、创建场次、点位查询和成绩提交。
 
-按 `.env.example` 设置 SUNRUN_MINIPROGRAM_BASE_URL 为学校实际小程序业务域名，默认 `https://wxxcx.xtotoro.com`，仅允许 HTTPS origin，不添加 `/wxxcx` 路径。
+按 `.env.example` 设置 `SUNRUN_MINIPROGRAM_BASE_URL` 为学校实际小程序业务域名，默认 `https://wxxcx.xtotoro.com`，仅允许 HTTPS origin，不添加 `/wxxcx` 路径。原域名发生网络连接错误或超时时，会自动尝试 `SUNRUN_MINIPROGRAM_FALLBACK_BASE_URL`。
 
 本项目不兑换或生成 Token。验证成功且资料包含 snCode、schoolCode、schoolCampusCode 后保存登录状态；旧扫码登录缓存会清除。
 
-`npm test` 使用本地模拟响应检查登录、任务、成绩与跑步请求契约，不请求生产接口。`security-audit/` 为分析材料，不参与项目 lint。
+`npm test` 使用本地模拟响应检查登录、任务与跑步请求契约，不请求生产接口。`security-audit/` 为分析材料，不参与项目 lint。
 
 ## 开始跑步
 

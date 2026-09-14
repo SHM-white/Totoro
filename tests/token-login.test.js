@@ -21,6 +21,19 @@ test('Token login uses the mini-program GET protocol and maps required profile f
   assert.equal(data.stuName, '测试用户');
 });
 
+test('Token login retries the fallback origin after a connection failure', async t => {
+  t.mock.method(console, 'error', () => {});
+  const hosts = [];
+  const data = await loginWithToken('test-token', { fetchImpl: async url => {
+    const host = new URL(url).hostname;
+    hosts.push(host);
+    if (host === 'wxxcx.xtotoro.com') throw new TypeError('fetch failed');
+    return Response.json({ code: '0', obj: profile });
+  } });
+  assert.deepEqual(hosts, ['wxxcx.xtotoro.com', 'app.xtotoro.com']);
+  assert.equal(data.stuNumber, '00123');
+});
+
 test('empty and malformed tokens fail before any upstream request', async () => {
   for (const value of [null, '', 'Bearer ', 'a\nb', 'x'.repeat(16385)]) {
     await assert.rejects(loginWithToken(value, { fetchImpl: () => assert.fail('must not fetch') }), { status: 400 });
