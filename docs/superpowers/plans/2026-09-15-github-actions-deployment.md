@@ -4,7 +4,7 @@
 
 **Goal:** Deploy every pushed `main` commit to the Tencent Cloud production server through GitHub Actions without interrupting the currently healthy release when a build fails.
 
-**Architecture:** GitHub Actions authenticates with a dedicated Ed25519 key and invokes an unprivileged deployment script on the server. The script builds each commit in its own Git worktree, atomically changes `/opt/totoro-current`, restarts the systemd service, checks local HTTP health, and rolls the symlink back if the new process is unhealthy.
+**Architecture:** GitHub Actions authenticates with a dedicated Ed25519 key and invokes an unprivileged deployment script on the server. The script builds each commit in its own Git worktree, atomically changes `/opt/totoro-runtime/current`, restarts the systemd service, checks local HTTP health, and rolls the symlink back if the new process is unhealthy.
 
 **Tech Stack:** GitHub Actions, OpenSSH, Bash, Git worktrees, pnpm, Next.js, systemd
 
@@ -30,7 +30,7 @@
 - Test: `tests/deploy-script.test.js`
 
 **Interfaces:**
-- Consumes: one full 40-character Git commit SHA as `$1`; `/opt/totoro` as the control checkout; `/opt/totoro-current` as the active-release symlink.
+- Consumes: one full 40-character Git commit SHA as `$1`; `/opt/totoro` as the control checkout; `/opt/totoro-runtime/current` as the active-release symlink.
 - Produces: a built release at `/opt/totoro-releases/<sha>`, an atomically updated active symlink, and exit status `0` only after HTTP health succeeds.
 
 - [ ] **Step 1: Write a static contract test**
@@ -105,7 +105,7 @@ Install `ops/deploy.sh` at `/home/ubuntu/bin/totoro-deploy`. Allow `ubuntu` to r
 
 - [ ] **Step 3: Point systemd at the active-release symlink**
 
-Create `/opt/totoro-current -> /opt/totoro`, change both `WorkingDirectory` and `ExecStart` to use `/opt/totoro-current`, reload systemd, restart the service, and verify local HTTP status `200`.
+Create `/opt/totoro-runtime/current -> /opt/totoro`, change both `WorkingDirectory` and `ExecStart` to use `/opt/totoro-runtime/current`, reload systemd, restart the service, and verify local HTTP status `200`.
 
 - [ ] **Step 4: Configure GitHub Actions secrets**
 
@@ -136,4 +136,4 @@ Commit the workflow, deployment script, tests, plan, and README, then push `main
 
 - [ ] **Step 4: Verify the Actions run and production**
 
-Wait for the workflow to finish, confirm its conclusion is `success`, confirm `/opt/totoro-current` resolves to the pushed SHA, confirm `totoro.service` is active, and confirm `https://nuaatotoro.xyz/` returns HTTP `200`.
+Wait for the workflow to finish, confirm its conclusion is `success`, confirm `/opt/totoro-runtime/current` resolves to the pushed SHA, confirm `totoro.service` is active, and confirm `https://nuaatotoro.xyz/` returns HTTP `200`.

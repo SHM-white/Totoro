@@ -4,7 +4,7 @@ set -Eeuo pipefail
 commit_sha="${1:-}"
 control_repo="/opt/totoro"
 releases_root="/opt/totoro-releases"
-active_link="/opt/totoro-current"
+active_link="/opt/totoro-runtime/current"
 service_name="totoro.service"
 
 if [[ ! "$commit_sha" =~ ^[0-9a-f]{40}$ ]]; then

@@ -42,7 +42,7 @@ Vercel 使用默认 npm 流程即可：
 - `DEPLOY_SSH_KEY`：专用 Ed25519 私钥
 - `DEPLOY_KNOWN_HOSTS`：经过人工核验的服务器 SSH 公钥记录
 
-服务端的 [`ops/deploy.sh`](ops/deploy.sh) 会串行执行部署，在独立 Git worktree 中安装依赖和构建。构建成功后才原子切换 `/opt/totoro-current` 并重启服务；健康检查失败时自动恢复上一个版本，服务器保留最近三个版本。
+服务端的 [`ops/deploy.sh`](ops/deploy.sh) 会串行执行部署，在独立 Git worktree 中安装依赖和构建。构建成功后才原子切换 `/opt/totoro-runtime/current` 并重启服务；健康检查失败时自动恢复上一个版本，服务器保留最近三个版本。
 
 查看生产日志：
 
