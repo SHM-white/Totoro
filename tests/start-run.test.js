@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildRunFixture, distanceOfTrack } from '../lib/server/run-data.js';
+import {
+  buildRunFixture,
+  createRunPlan,
+  distanceOfTrack,
+  summarizeRunPlan,
+} from '../lib/server/run-data.js';
 import { startRun } from '../lib/server/start-run.js';
 
 const task = {
@@ -41,6 +46,26 @@ test('fixture follows the selected route with realistic mini-program fields', ()
   assert.ok(points.every((point, index) => Number.isFinite(point.timestamp)
     && /^\d{2}:\d{2}:\d{2}$/.test(point.time)
     && (!index || point.timestamp > points[index - 1].timestamp)));
+  const timestampGaps = points.slice(1).map((point, index) => point.timestamp - points[index].timestamp);
+  assert.ok(new Set(timestampGaps).size > 1);
+});
+
+test('run plan randomizes bounded time and stride while preserving preview metrics', () => {
+  const plans = Array.from({ length: 12 }, () => createRunPlan(task));
+  for (const plan of plans) {
+    assert.equal(plan.targetMeters, 3200);
+    assert.ok(plan.durationSeconds >= 735 && plan.durationSeconds <= 1365);
+    assert.ok(plan.strideMeters >= 0.7 && plan.strideMeters <= 0.86);
+  }
+  assert.ok(new Set(plans.map(plan => `${plan.durationSeconds}:${plan.strideMeters}`)).size > 1);
+
+  const plan = plans[0];
+  const preview = summarizeRunPlan({ task, route, plan });
+  const fixture = buildRunFixture({ task, route, identity }, { plan });
+  assert.deepEqual(
+    (({ routeName, km, usedTime, avgSpeed, steps }) => ({ routeName, km, usedTime, avgSpeed, steps }))(fixture.summary),
+    preview,
+  );
 });
 
 test('start run sends the complete mini-program contract', async () => {

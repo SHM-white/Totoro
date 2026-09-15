@@ -18,6 +18,7 @@ test('deployment script builds an isolated release and rolls back an unhealthy s
   assert.match(script, /curl -fsS --max-time 5 http:\/\/127\.0\.0\.1:3000\//);
   assert.match(script, /rollback_release/);
   assert.match(script, /if ! sudo \/usr\/bin\/systemctl restart "\$service_name"/);
+  assert.match(script, /if ! sudo \/usr\/bin\/systemctl restart "\$worker_service_name"/);
   assert.match(script, /tail -n \+4/);
 
   assert.ok(

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { LogOut, RefreshCcw } from 'lucide-react';
 import { getRunTasks } from '../../lib/api';
 import StartRunPanel from '../../components/StartRunPanel';
+import DiscussionComments from '../../components/DiscussionComments';
 import useStore from '../../lib/store';
 
 export default function DashboardPage() {
@@ -84,8 +85,9 @@ export default function DashboardPage() {
             </p>
           </div>
         )}
-        {!tasksLoading && <StartRunPanel task={task} route={route} />}
+        {!tasksLoading && <StartRunPanel key={`${task?.taskId || ''}:${route?.pointId || ''}`} task={task} route={route} />}
       </section>
+      <DiscussionComments />
     </main>
   );
 }

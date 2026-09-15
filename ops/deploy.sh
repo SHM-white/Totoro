@@ -6,6 +6,7 @@ control_repo="/opt/totoro"
 releases_root="/opt/totoro-releases"
 active_link="/opt/totoro-runtime/current"
 service_name="totoro.service"
+worker_service_name="totoro-worker.service"
 
 if [[ ! "$commit_sha" =~ ^[0-9a-f]{40}$ ]]; then
   echo "Expected a full 40-character Git commit SHA." >&2
@@ -51,6 +52,7 @@ rollback_release() {
     ln -s "$previous_release" "$rollback_link"
     mv -Tf "$rollback_link" "$active_link"
     sudo /usr/bin/systemctl restart "$service_name"
+    sudo /usr/bin/systemctl restart "$worker_service_name"
     echo "Rolled back to $previous_release" >&2
   fi
 }
@@ -60,6 +62,11 @@ ln -s "$release_dir" "$next_link"
 mv -Tf "$next_link" "$active_link"
 if ! sudo /usr/bin/systemctl restart "$service_name"; then
   echo "The new release could not be started." >&2
+  rollback_release
+  exit 6
+fi
+if ! sudo /usr/bin/systemctl restart "$worker_service_name"; then
+  echo "The delayed run worker could not be started." >&2
   rollback_release
   exit 6
 fi
