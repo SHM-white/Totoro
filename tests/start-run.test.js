@@ -19,10 +19,18 @@ const route = {
 const identity = { token: 'fixture-token', stuNumber: 'student-1', schoolCode: 'school-1' };
 
 test('fixture follows the selected route with realistic mini-program fields', () => {
-  const fixture = buildRunFixture({ task, route, identity, now: new Date('2026-09-14T06:30:00+08:00') });
+  const now = new Date('2026-09-14T06:30:00+08:00');
+  const fixture = buildRunFixture({ task, route, identity, now });
   const points = fixture.detail.pointList;
+  const alternateFixture = buildRunFixture({ task, route, identity, now });
   assert.ok(points.length > 250);
   assert.ok(Math.abs(distanceOfTrack(points) / 1000 - 3.2) < 0.02);
+  assert.notDeepEqual(
+    points.map(({ latitude, longitude }) => ({ latitude, longitude })),
+    alternateFixture.detail.pointList.map(({ latitude, longitude }) => ({ latitude, longitude })),
+  );
+  const segmentDistances = points.slice(1).map((point, index) => distanceOfTrack([points[index], point]));
+  assert.ok(segmentDistances.every(distance => distance > 0 && distance < 35));
   assert.match(fixture.exercise.avgSpeed, /^\d+'\d{2}"$/);
   assert.match(fixture.exercise.usedTime, /^00:\d{2}:\d{2}$/);
   assert.equal(fixture.begin.paperId, 'paper-1');
@@ -127,6 +135,14 @@ test('a route-less task creates a real session and submits an empty configured r
   assert.equal(calls[7].body.scantronId, 'route-free-session-1');
   assert.equal(calls[7].body.pointList.length, result.track.pointCount);
   assert.ok(Math.abs(distanceOfTrack(calls[7].body.pointList) / 1000 - 3.2) < 0.02);
+  assert.deepEqual(
+    { longitude: calls[7].body.pointList[0].longitude, latitude: calls[7].body.pointList[0].latitude },
+    { longitude: 118.789377, latitude: 31.939196 },
+  );
+  assert.ok(calls[7].body.pointList.every(point => (
+    point.longitude >= 118.788176 && point.longitude <= 118.792038
+    && point.latitude >= 31.934225 && point.latitude <= 31.93925
+  )));
 });
 
 test('start run stops before creating a session when face verification is required', async () => {
