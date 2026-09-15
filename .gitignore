@@ -25,6 +25,9 @@ build/
 # Local Codex workspace
 .codex/
 
+# Local helper tools
+.local-tools/
+
 # Environment
 .env
 .env*

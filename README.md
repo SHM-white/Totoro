@@ -17,6 +17,24 @@ pnpm install
 pnpm dev
 ```
 
+## Windows 一键本地部署
+
+双击项目根目录的 [`start-local.cmd`](start-local.cmd)。脚本会先按 [WMPFDebugger 中文文档](https://github.com/evi0s/WMPFDebugger/blob/main/README.zh.md) 下载并启动小程序调试器。看到提示后，在微信中打开目标小程序并按任意键；脚本会打开小程序 DevTools，并在终端说明如何从 Network 请求中找到 Token。
+
+脚本还会从 [WMPFDebugger PR #279](https://github.com/evi0s/WMPFDebugger/pull/279) 的固定提交安装 WMPF 25560 静态配置。随后自动完成 Totoro 依赖安装、生产构建与启动，并在服务就绪后打开浏览器。默认使用 `http://127.0.0.1:3000`；端口被占用时会自动尝试后续端口。WMPFDebugger 要求 Node.js 22 或更高版本，首次安装 Frida 依赖可能需要较长时间。
+
+终端窗口需要在使用期间保持打开，按 `Ctrl+C` 即可停止服务。也可在 PowerShell 中指定端口：
+
+```powershell
+.\start-local.ps1 -Port 8080
+```
+
+如果已经取得 Token、不需要再次启动小程序调试器：
+
+```powershell
+.\start-local.ps1 -SkipDebugger
+```
+
 ## 验证
 
 ```bash
