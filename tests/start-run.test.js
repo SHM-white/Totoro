@@ -82,6 +82,53 @@ test('start run rejects invalid origins and incomplete identity before fetching'
   }), /缺少账号资料/);
 });
 
+test('a route-less task creates a real session and submits an empty configured route', async () => {
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    const endpoint = new URL(url).pathname;
+    calls.push({ endpoint, body: JSON.parse(options.body) });
+    const replies = {
+      '/wxxcx/platform/camera/currentTimeMillis': { status: '00', code: '0', body: 1 },
+      '/wxxcx/platform/sunrunFace/selectSunRunStartConfiguration': { status: '00', code: '0', body: { sunrunStartFace: '0', sunrunPointRandom: '0' } },
+      '/wxxcx/platform/sunrunFace/startUpNote': { status: '00', code: '0' },
+      '/wxxcx/sunrun/getRunBegin': { status: '00', code: '0', scantronId: 'route-free-session-1' },
+      '/wxxcx/sunrun/getRunPointList': { status: '00', code: '0', data: [] },
+      '/wxxcx/sunrun/getRunPointListAbnormal': { status: '00', code: '0', data: [] },
+      '/wxxcx/sunrun/sunRunExercises': { status: '00', code: '0' },
+      '/wxxcx/platform/recrecord/sunRunExercisesDetail': { status: '00', code: '0' },
+    };
+    return Response.json(replies[endpoint]);
+  };
+  const result = await startRun({ task: { ...task, runPointList: [] }, route: undefined, ...identity }, {
+    baseUrl: 'https://sunrun-test.example.com', fetchImpl,
+    now: new Date('2026-09-15T18:00:00+08:00'),
+  });
+  assert.equal(result.mode, 'completed');
+  assert.equal(result.scantronId, 'route-free-session-1');
+  assert.equal(result.track.routeName, '无固定路线');
+  assert.ok(result.track.pointCount > 250);
+  assert.deepEqual(calls.map(call => call.endpoint), [
+    '/wxxcx/platform/camera/currentTimeMillis',
+    '/wxxcx/platform/sunrunFace/selectSunRunStartConfiguration',
+    '/wxxcx/platform/sunrunFace/startUpNote',
+    '/wxxcx/sunrun/getRunBegin',
+    '/wxxcx/sunrun/getRunPointList',
+    '/wxxcx/sunrun/getRunPointListAbnormal',
+    '/wxxcx/sunrun/sunRunExercises',
+    '/wxxcx/platform/recrecord/sunRunExercisesDetail',
+  ]);
+  assert.deepEqual(calls[3].body, {
+    runType: 0, version: 'web-run-1.0', phoneInfo: 'Web&GeneratedRoute&Node.js',
+    paperId: 'paper-1', lineId: '', faceBase64: '', token: 'fixture-token',
+  });
+  assert.equal(calls[6].body.scantronId, 'route-free-session-1');
+  assert.equal(calls[6].body.taskId, 'paper-1');
+  assert.deepEqual(calls[6].body.sunrunPathPointList, []);
+  assert.equal(calls[7].body.scantronId, 'route-free-session-1');
+  assert.equal(calls[7].body.pointList.length, result.track.pointCount);
+  assert.ok(Math.abs(distanceOfTrack(calls[7].body.pointList) / 1000 - 3.2) < 0.02);
+});
+
 test('start run stops before creating a session when face verification is required', async () => {
   const calls = [];
   const fetchImpl = async url => {

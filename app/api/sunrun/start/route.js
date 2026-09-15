@@ -18,6 +18,7 @@ export async function POST(request) {
     return json({
       success: true,
       result: {
+        mode: result.mode,
         scantronId: result.scantronId,
         track: {
           routeName: result.track.routeName,
@@ -25,7 +26,9 @@ export async function POST(request) {
           usedTime: result.track.usedTime,
           avgSpeed: result.track.avgSpeed,
           steps: result.track.steps,
+          pointCount: result.track.pointCount,
         },
+        checks: result.steps,
       },
     }, { headers });
   } catch (error) {

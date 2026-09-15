@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { makeMiniTasks } from '../lib/server/sunrun-models.js';
 import { SunRunService } from '../lib/server/sunrun-service.js';
 
 const taskPaper = {
@@ -51,4 +52,12 @@ test('task list retries the fallback origin after a connection failure', async t
   const tasks = await service.getSunrunTasks();
   assert.equal(tasks.length, 1);
   assert.deepEqual(hosts, ['wxxcx.xtotoro.com', 'app.xtotoro.com']);
+});
+
+test('task normalization preserves a task whose route list is empty', () => {
+  const [task] = makeMiniTasks({
+    getSunrunPaperResponseList: [{ ...taskPaper, taskId: 'paper-no-route', runPointList: [] }],
+  });
+  assert.equal(task.taskId, 'paper-no-route');
+  assert.deepEqual(task.runPointList, []);
 });
