@@ -76,6 +76,20 @@ test('preview route metrics are the metrics queued by confirmed start', { concur
   const added = [];
   globalThis[queueKey] = { add: async (...args) => { added.push(args); } };
   process.env.REDIS_URL = 'redis://127.0.0.1:6379';
+  t.mock.method(globalThis, 'fetch', async url => {
+    const endpoint = new URL(url).pathname;
+    const replies = {
+      '/wxxcx/platform/camera/currentTimeMillis': { status: '00', code: '0', body: 1 },
+      '/wxxcx/platform/sunrunFace/selectSunRunStartConfiguration': { status: '00', code: '0', body: { sunrunStartFace: '0', sunrunPointRandom: '0' } },
+      '/wxxcx/platform/camera/getCameraConfig': { status: '00', code: '0', body: { flag: 0 } },
+      '/wxxcx/platform/sunrunFace/selectSunRunRandomConfiguration': { status: '00', code: '0', body: {} },
+      '/wxxcx/platform/sunrunFace/startUpNote': { status: '00', code: '0' },
+      '/wxxcx/sunrun/getRunBegin': { status: '00', code: '0', scantronId: 'route-session-1' },
+      '/wxxcx/sunrun/getRunPointList': { status: '00', code: '0', data: [] },
+      '/wxxcx/sunrun/getRunPointListAbnormal': { status: '00', code: '0', data: [] },
+    };
+    return Response.json(replies[endpoint]);
+  });
   t.after(() => {
     if (previousQueue === undefined) delete globalThis[queueKey];
     else globalThis[queueKey] = previousQueue;
@@ -105,4 +119,5 @@ test('preview route metrics are the metrics queued by confirmed start', { concur
     assert.equal(added.length, 1);
     assert.equal(added[0][0], 'execute-live-run');
     assert.equal(added[0][2].delay > 0, true);
+    assert.equal(added[0][1].payload.session.scantronId, 'route-session-1');
 });

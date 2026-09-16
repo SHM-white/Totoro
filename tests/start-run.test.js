@@ -6,7 +6,7 @@ import {
   distanceOfTrack,
   summarizeRunPlan,
 } from '../lib/server/run-data.js';
-import { startRun } from '../lib/server/start-run.js';
+import { completeRun, prepareRun, startRun } from '../lib/server/start-run.js';
 
 const task = {
   taskId: 'paper-1', name: '跑步任务', mileage: '3.20', minTime: '10', maxTime: '25', fitDegree: '0.60',
@@ -113,6 +113,44 @@ test('start run rejects invalid origins and incomplete identity before fetching'
   await assert.rejects(startRun({ task, route, token: '', stuNumber: 'student-1', schoolCode: 'school-1' }, {
     baseUrl: 'https://sunrun-test.example.com', fetchImpl,
   }), /缺少账号资料/);
+});
+
+test('delayed workflow creates the session now and only completes it later', async () => {
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    const endpoint = new URL(url).pathname;
+    calls.push({ endpoint, body: JSON.parse(options.body) });
+    const replies = {
+      '/wxxcx/platform/camera/currentTimeMillis': { status: '00', code: '0', body: 1 },
+      '/wxxcx/platform/sunrunFace/selectSunRunStartConfiguration': { status: '00', code: '0', body: { sunrunStartFace: '0', sunrunPointRandom: '0' } },
+      '/wxxcx/platform/camera/getCameraConfig': { status: '00', code: '0', body: { flag: 0 } },
+      '/wxxcx/platform/sunrunFace/selectSunRunRandomConfiguration': { status: '00', code: '0', body: {} },
+      '/wxxcx/platform/sunrunFace/startUpNote': { status: '00', code: '0' },
+      '/wxxcx/sunrun/getRunBegin': { status: '00', code: '0', scantronId: 'prepared-session-1' },
+      '/wxxcx/sunrun/getRunPointList': { status: '00', code: '0', data: [] },
+      '/wxxcx/sunrun/getRunPointListAbnormal': { status: '00', code: '0', data: [] },
+      '/wxxcx/sunrun/sunRunExercises': { status: '00', code: '0' },
+      '/wxxcx/platform/recrecord/sunRunExercisesDetail': { status: '00', code: '0' },
+    };
+    return Response.json(replies[endpoint]);
+  };
+  const now = new Date('2026-09-15T10:00:00.000Z');
+  const prepared = await prepareRun({ task, route, ...identity }, {
+    baseUrl: 'https://sunrun-test.example.com', fetchImpl, now,
+  });
+  assert.equal(prepared.scantronId, 'prepared-session-1');
+  assert.equal(calls.some(call => call.endpoint === '/wxxcx/sunrun/sunRunExercises'), false);
+
+  const preparationCount = calls.length;
+  await completeRun({ task, route, ...identity }, prepared, {
+    baseUrl: 'https://sunrun-test.example.com', fetchImpl,
+  });
+  assert.deepEqual(calls.slice(preparationCount).map(call => call.endpoint), [
+    '/wxxcx/sunrun/sunRunExercises',
+    '/wxxcx/platform/recrecord/sunRunExercisesDetail',
+  ]);
+  assert.equal(calls.filter(call => call.endpoint === '/wxxcx/sunrun/getRunBegin').length, 1);
+  assert.ok(calls.slice(preparationCount).every(call => call.body.scantronId === 'prepared-session-1'));
 });
 
 test('a route-less task creates a real session and submits an empty configured route', async () => {

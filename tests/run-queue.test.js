@@ -33,6 +33,11 @@ const route = {
   ],
 };
 const plan = { targetMeters: 3200, durationSeconds: 1200, strideMeters: 0.8 };
+const session = {
+  scantronId: 'test-session-1',
+  runStartedAt: '2026-09-15T10:00:00.000Z',
+  preferredBaseUrl: 'https://app.xtotoro.com/',
+};
 
 test('queue configuration validates Redis', () => {
   assert.equal(validateRedisUrl(env.REDIS_URL).protocol, 'redis:');
@@ -42,7 +47,7 @@ test('queue configuration validates Redis', () => {
 
 test('delayed jobs store the real execution input and retain the confirmation time', () => {
   const now = new Date('2026-09-15T10:00:00.000Z');
-  const job = buildDelayedRunJob({ input: { task, route, ...identity }, plan, track }, {
+  const job = buildDelayedRunJob({ input: { task, route, ...identity }, plan, session, track }, {
     now,
     jobId: 'job-1',
     env,
@@ -50,11 +55,11 @@ test('delayed jobs store the real execution input and retain the confirmation ti
 
   assert.equal(job.delayMs, 1_200_000);
   assert.equal(job.scheduledAt, '2026-09-15T10:20:00.000Z');
-  assert.equal(job.data.schemaVersion, 3);
+  assert.equal(job.data.schemaVersion, 4);
   assert.equal(job.data.jobId, 'job-1');
   assert.deepEqual(job.data.payload.input, { task, route, ...identity });
   assert.deepEqual(job.data.payload.plan, plan);
-  assert.equal(job.data.payload.runStartedAt, now.toISOString());
+  assert.deepEqual(job.data.payload.session, session);
 });
 
 test('confirmed runs enqueue one non-retrying real execution job', async () => {
@@ -66,7 +71,7 @@ test('confirmed runs enqueue one non-retrying real execution job', async () => {
     jobId: 'job-2',
     now: new Date('2026-09-15T10:00:00.000Z'),
     env,
-    fetchImpl: () => assert.fail('enqueue must not call the upstream interface'),
+    prepareRunImpl: async () => session,
   });
 
   assert.equal(result.mode, 'queued');
@@ -75,10 +80,11 @@ test('confirmed runs enqueue one non-retrying real execution job', async () => {
   assert.equal(added[0][0], 'execute-live-run');
   assert.equal(added[0][2].delay, 1_200_000);
   assert.equal(added[0][2].attempts, 1);
+  assert.equal(added[0][1].payload.session.scantronId, 'test-session-1');
 });
 
 test('job status is bound to the same student and school', async () => {
-  const built = buildDelayedRunJob({ input: { task, route, ...identity }, plan, track }, {
+  const built = buildDelayedRunJob({ input: { task, route, ...identity }, plan, session, track }, {
     jobId: 'job-3', env,
   });
   const queue = {
@@ -99,7 +105,7 @@ test('job status is bound to the same student and school', async () => {
 });
 
 test('worker reads the payload and calls the real runner with the confirmation time', async () => {
-  const built = buildDelayedRunJob({ input: { task, route, ...identity }, plan, track }, {
+  const built = buildDelayedRunJob({ input: { task, route, ...identity }, plan, session, track }, {
     jobId: 'job-4',
     now: new Date('2026-09-15T10:00:00.000Z'),
     env,
@@ -110,7 +116,7 @@ test('worker reads the payload and calls the real runner with the confirmation t
     id: 'job-4', name: 'execute-live-run', data: built.data,
   }, {
     env,
-    startRunImpl: async (...args) => {
+    completeRunImpl: async (...args) => {
       calls.push(args);
       return expected;
     },
@@ -119,6 +125,7 @@ test('worker reads the payload and calls the real runner with the confirmation t
   assert.deepEqual(result, expected);
   assert.equal(calls.length, 1);
   assert.deepEqual(calls[0][0], { task, route, ...identity });
-  assert.deepEqual(calls[0][1].plan, plan);
-  assert.equal(calls[0][1].now.toISOString(), '2026-09-15T10:00:00.000Z');
+  assert.deepEqual(calls[0][1], session);
+  assert.deepEqual(calls[0][2].plan, plan);
+  assert.equal(calls[0][2].preferredBaseUrl, session.preferredBaseUrl);
 });
