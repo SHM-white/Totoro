@@ -67,6 +67,12 @@ sudo tail -f /var/log/nginx/error.log
 
 `npm test` 使用本地模拟响应检查登录、任务与跑步请求契约，不请求生产接口。`security-audit/` 为分析材料，不参与项目 lint。
 
+## 早操打卡
+
+登录后的任务页会调用 `/wxxcx/platform/mornSign/getMornSignPaper` 获取当前账号的早操任务，展示任务日期、签到时段、今日完成数、允许范围和点位列表。
+
+选择点位并点击“提交签到”后，服务端会重新获取一次当前任务，使用该点位返回的经纬度和二维码，按小程序 `encryptLong` 协议加密请求，再调用 `/wxxcx/platform/mornSign/morningExercises`。每次点击只提交一次，不会因上游业务拒绝自动重试；提交后会刷新任务，以确认 `dayCompSignCount` 是否变化。
+
 ## 开始跑步
 
 任务页会先生成路线、里程、用时、配速和步数预览，确认后再执行真实跑步接口。预览数据以随机 ID 在服务端临时保存十分钟，不包含 Token 或生成后的轨迹点；服务重启后需要重新生成预览。确认开始时使用预览选定的统计参数，以 `Math.random` 生成随机起点、约 2 米 GPS 抖动、8–12 米采样间距和非均匀时间戳，然后依次执行准备配置、`getRunBegin`、点位查询、`sunRunExercises` 和 `sunRunExercisesDetail`，成绩仍然立即提交。
@@ -77,7 +83,7 @@ sudo tail -f /var/log/nginx/error.log
 
 ## 跑步延迟队列
 
-“确认开始”固定把任务写入 Redis，并按预览的完整跑步用时延迟执行。到期后，独立 Worker 使用确认时刻作为跑步开始时间，依次调用准备配置、`getRunBegin`、点位查询、`sunRunExercises` 和 `sunRunExercisesDetail` 正式接口。测试记录是否隔离由正式后端负责，本项目不维护账号白名单或模式开关。
+“确认开始”固定把任务写入 Redis，并按预览的完整跑步用时延迟执行。到期后，独立 Worker 使用确认时刻作为跑步开始时间，依次调用准备配置、`getRunBegin`、点位查询、`sunRunExercises` 和 `sunRunExercisesDetail` 正式接口。账号和记录是否隔离由正式后端负责，本项目不维护账号白名单或模式开关。
 
 配置 Redis 地址：
 
