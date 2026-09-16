@@ -4,6 +4,7 @@ import { executeConfirmedRun } from '../lib/server/confirmed-run.js';
 import {
   buildDelayedRunJob,
   getDelayedRunJobStatus,
+  getStudentRunJobs,
   processDelayedRunJob,
   validateRedisUrl,
 } from '../lib/server/run-queue.js';
@@ -60,6 +61,34 @@ test('delayed jobs store the real execution input and retain the confirmation ti
   assert.deepEqual(job.data.payload.input, { task, route, ...identity });
   assert.deepEqual(job.data.payload.plan, plan);
   assert.deepEqual(job.data.payload.session, session);
+  assert.deepEqual(job.data.track, track);
+  assert.equal(job.data.scheduledAt, '2026-09-15T10:20:00.000Z');
+});
+
+test('student queue listing filters by school and student without exposing payloads', async () => {
+  const own = buildDelayedRunJob({ input: { task, route, ...identity }, plan, session, track }, {
+    jobId: 'own-job', now: new Date(session.runStartedAt), env,
+  });
+  const other = buildDelayedRunJob({
+    input: { task, route, ...identity, stuNumber: 'student-2' }, plan,
+    session: { ...session, scantronId: 'other-session' }, track,
+  }, { jobId: 'other-job', now: new Date(session.runStartedAt), env });
+  const fakeJob = (id, data, state) => ({ id, data, getState: async () => state });
+  const queue = {
+    getJobs: async () => [
+      fakeJob('other-job', other.data, 'active'),
+      fakeJob('own-job', own.data, 'delayed'),
+    ],
+  };
+
+  const jobs = await getStudentRunJobs(identity, { queue });
+  assert.deepEqual(jobs, [{
+    jobId: 'own-job',
+    state: 'delayed',
+    scheduledAt: '2026-09-15T10:20:00.000Z',
+    track,
+  }]);
+  assert.equal(JSON.stringify(jobs).includes(identity.token), false);
 });
 
 test('confirmed runs enqueue one non-retrying real execution job', async () => {

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { getRunJobStatus, previewRun, startRun } from '../lib/api';
+import { getCurrentRunJobs, getRunJobStatus, previewRun, startRun } from '../lib/api';
 import useStore from '../lib/store';
 
 export default function StartRunPanel({ task, route }) {
@@ -11,33 +11,59 @@ export default function StartRunPanel({ task, route }) {
   const [error, setError] = useState('');
   const [preview, setPreview] = useState(null);
   const [result, setResult] = useState(null);
+  const [queuedJobs, setQueuedJobs] = useState([]);
+  const [queueReady, setQueueReady] = useState(false);
+  const queuedJobsRef = useRef([]);
+  const queuedJobIds = queuedJobs.map(job => job.jobId).join(':');
 
   useEffect(() => {
-    if (result?.mode !== 'queued' || !result.jobId) return undefined;
+    queuedJobsRef.current = queuedJobs;
+  }, [queuedJobs]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getCurrentRunJobs(getAuthData()).then(data => {
+      if (!cancelled) setQueuedJobs(data.jobs || []);
+    }).catch(caught => {
+      if (!cancelled) setError(caught.message);
+    }).finally(() => {
+      if (!cancelled) setQueueReady(true);
+    });
+    return () => { cancelled = true; };
+  }, [getAuthData]);
+
+  useEffect(() => {
+    if (!queuedJobIds) return undefined;
     let cancelled = false;
     let timer;
 
     async function poll() {
-      try {
-        const data = await getRunJobStatus(getAuthData(), result.jobId);
-        if (cancelled) return;
-        setError('');
-        if (data.job.state === 'completed') {
-          setResult(data.job.result);
+      const statuses = await Promise.allSettled(
+        queuedJobsRef.current.map(job => getRunJobStatus(getAuthData(), job.jobId)),
+      );
+      if (cancelled) return;
+      const remaining = [];
+      let pollingError = '';
+      statuses.forEach((status, index) => {
+        const queued = queuedJobsRef.current[index];
+        if (status.status === 'rejected') {
+          remaining.push(queued);
+          pollingError = `${status.reason.message}，正在重试`;
           return;
         }
-        if (data.job.state === 'failed') {
-          setError(data.job.failedReason || '延迟任务处理失败');
-          setResult(null);
+        if (status.value.job.state === 'completed') {
+          setResult(status.value.job.result);
           return;
         }
-        timer = window.setTimeout(poll, 2000);
-      } catch (caught) {
-        if (!cancelled) {
-          setError(`${caught.message}，正在重试`);
-          timer = window.setTimeout(poll, 2000);
+        if (status.value.job.state === 'failed') {
+          pollingError = status.value.job.failedReason || '延迟任务处理失败';
+          return;
         }
-      }
+        remaining.push({ ...queued, state: status.value.job.state });
+      });
+      setQueuedJobs(remaining);
+      setError(pollingError);
+      if (remaining.length) timer = window.setTimeout(poll, 2000);
     }
 
     timer = window.setTimeout(poll, 1000);
@@ -45,7 +71,7 @@ export default function StartRunPanel({ task, route }) {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [getAuthData, result?.jobId, result?.mode]);
+  }, [getAuthData, queuedJobIds]);
 
   async function generatePreview() {
     if (pending.current || !task) return;
@@ -71,7 +97,8 @@ export default function StartRunPanel({ task, route }) {
     setError('');
     try {
       const data = await startRun(getAuthData(), task, route, preview.previewToken);
-      setResult(data.result);
+      setQueuedJobs(current => [data.result, ...current.filter(job => job.jobId !== data.result.jobId)]);
+      setResult(null);
       setPreview(null);
     } catch (caught) {
       setError(caught.message);
@@ -90,7 +117,8 @@ export default function StartRunPanel({ task, route }) {
     {task && !route && <p className="limit-note" role="status">
       当前任务未配置固定路线；开始后仍会创建真实跑步场次，并按空路线任务提交成绩。
     </p>}
-    {!preview && !result && <button className="action-button" type="button" disabled={busy || !task} onClick={generatePreview}>
+    {!queueReady && <p className="limit-note" role="status">正在恢复跑步队列…</p>}
+    {queueReady && !preview && !result && queuedJobs.length === 0 && <button className="action-button" type="button" disabled={busy || !task} onClick={generatePreview}>
       {operation === 'preview' ? '正在生成数据…' : '查看跑步数据'}
     </button>}
     {error && <p className="result-block error" role="alert">{error}</p>}
@@ -118,18 +146,18 @@ export default function StartRunPanel({ task, route }) {
         </button>
       </div>
     </article>}
-    {result?.mode === 'queued' && <article className="run-result result-block" role="status">
+    {queuedJobs.map(job => <article className="run-result result-block" role="status" key={job.jobId}>
       <div>
-        <strong>跑步已加入延迟队列</strong>
-        <span>{result.track.routeName} · {result.track.km} km · {result.track.usedTime}</span>
+        <strong>{job.state === 'active' ? '正在提交跑步数据' : '跑步已加入延迟队列'}</strong>
+        <span>{job.track.routeName} · {job.track.km} km · {job.track.usedTime}</span>
       </div>
       <div className="inline-stats">
-        <span>正在等待独立 Worker</span>
-        <span>计划处理：{new Date(result.scheduledAt).toLocaleTimeString('zh-CN')}</span>
+        <span>{job.state === 'active' ? '独立 Worker 正在处理' : '正在等待独立 Worker'}</span>
+        <span>计划处理：{new Date(job.scheduledAt).toLocaleTimeString('zh-CN')}</span>
       </div>
-      <p>任务 {result.jobId}</p>
-    </article>}
-    {result && result.mode !== 'queued' && <article className="run-result result-block success" role="status">
+      <p>任务 {job.jobId}</p>
+    </article>)}
+    {result && <article className="run-result result-block success" role="status">
       <div>
         <strong>跑步流程已完成</strong>
         <span>{result.track.routeName} · {result.track.km} km · {result.track.usedTime}</span>

@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { createRunPreview, verifyRunPreview } from '../lib/server/run-preview.js';
 import { POST as previewPOST } from '../app/api/sunrun/preview/route.js';
 import { POST as startPOST } from '../app/api/sunrun/start/route.js';
+import { POST as runJobPOST } from '../app/api/sunrun/run-job/route.js';
 
 const identity = { token: 'fixture-token', stuNumber: 'student-1', schoolCode: 'school-1' };
 const task = { taskId: 'paper-1', name: '跑步任务', mileage: '3.20', minTime: '10', maxTime: '25' };
@@ -74,11 +75,26 @@ test('preview route metrics are the metrics queued by confirmed start', { concur
   const previousQueue = globalThis[queueKey];
   const previousRedisUrl = process.env.REDIS_URL;
   const added = [];
-  globalThis[queueKey] = { add: async (...args) => { added.push(args); } };
+  globalThis[queueKey] = {
+    add: async (...args) => { added.push(args); },
+    getJobs: async () => added.map(([, data]) => ({
+      id: data.jobId,
+      data,
+      getState: async () => 'delayed',
+    })),
+  };
   process.env.REDIS_URL = 'redis://127.0.0.1:6379';
   t.mock.method(globalThis, 'fetch', async url => {
     const endpoint = new URL(url).pathname;
     const replies = {
+      '/wxxcx/platform/serverlist/GetStudentInfoByToken': {
+        code: 0,
+        obj: {
+          snCode: identity.stuNumber,
+          schoolCode: identity.schoolCode,
+          schoolCampusCode: 'campus-1',
+        },
+      },
       '/wxxcx/platform/camera/currentTimeMillis': { status: '00', code: '0', body: 1 },
       '/wxxcx/platform/sunrunFace/selectSunRunStartConfiguration': { status: '00', code: '0', body: { sunrunStartFace: '0', sunrunPointRandom: '0' } },
       '/wxxcx/platform/camera/getCameraConfig': { status: '00', code: '0', body: { flag: 0 } },
@@ -120,4 +136,15 @@ test('preview route metrics are the metrics queued by confirmed start', { concur
     assert.equal(added[0][0], 'execute-live-run');
     assert.equal(added[0][2].delay > 0, true);
     assert.equal(added[0][1].payload.session.scantronId, 'route-session-1');
+
+    const restoredResponse = await runJobPOST(request('/api/sunrun/run-job', {
+      token: identity.token,
+      stu_number: 'spoofed-student',
+      school_code: 'spoofed-school',
+    }));
+    const restoredBody = await restoredResponse.json();
+    assert.equal(restoredBody.success, true);
+    assert.equal(restoredBody.jobs.length, 1);
+    assert.equal(restoredBody.jobs[0].jobId, startBody.result.jobId);
+    assert.equal(JSON.stringify(restoredBody.jobs).includes(identity.token), false);
 });

@@ -1,6 +1,7 @@
 import { json, readJson } from '../../../../lib/server/http.js';
 import { executeConfirmedRun } from '../../../../lib/server/confirmed-run.js';
 import { verifyRunPreview } from '../../../../lib/server/run-preview.js';
+import { loginWithToken } from '../../../../lib/server/token-login.js';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
@@ -9,10 +10,11 @@ export async function POST(request) {
   const headers = { 'Cache-Control': 'no-store' };
   try {
     const body = await readJson(request);
+    const profile = await loginWithToken(body.token);
     const input = {
-      token: body.token,
-      stuNumber: body.stu_number,
-      schoolCode: body.school_code || body.school_id,
+      token: profile.token,
+      stuNumber: profile.stuNumber,
+      schoolCode: profile.schoolCode,
       task: body.task,
       route: body.route,
     };
