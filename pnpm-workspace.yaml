@@ -1,2 +1,7 @@
+# This repository is a single package; the root package is the whole workspace.
+# Newer pnpm versions treat the field as optional, but pnpm 9 rejects the file
+# with "packages field missing or empty" when it is absent.
+packages:
+  - '.'
 allowBuilds:
   msgpackr-extract: false

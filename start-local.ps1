@@ -9,6 +9,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
 Set-Location -LiteralPath $PSScriptRoot
 $debuggerProcess = $null
 $workerProcess = $null
@@ -16,6 +17,14 @@ $dockerCommand = $null
 $redisContainerName = 'totoro-local-redis'
 $redisStartedHere = $false
 $toolsRoot = Join-Path $PSScriptRoot '.local-tools'
+
+# Node.js and Docker Desktop must be installed manually (see README.md);
+# everything below only reports them. pnpm is installed or upgraded when needed.
+# pnpm 11 is the first release that reads 'allowBuilds' from pnpm-workspace.yaml.
+$minimumPnpmVersion = [version]'11.0.0'
+# Pinned so '--frozen-lockfile' keeps working; verified against lockfileVersion 9.0.
+$pnpmInstallVersion = '12.4.2'
+$fallbackNpmRegistry = 'https://registry.npmmirror.com'
 
 function Stop-LocalServices {
     if (($null -ne $workerProcess) -and (-not $workerProcess.HasExited)) {
@@ -37,6 +46,175 @@ function Invoke-DockerProbe([string[]]$Arguments) {
     }
 }
 
+function Get-PnpmVersion([string]$PnpmPath) {
+    $savedPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $raw = & $PnpmPath --version 2>$null | Select-Object -First 1
+    } finally {
+        $ErrorActionPreference = $savedPreference
+    }
+    if ([string]::IsNullOrWhiteSpace($raw)) {
+        return $null
+    }
+    $parsed = $null
+    if (-not [version]::TryParse(([string]$raw).Trim(), [ref]$parsed)) {
+        return $null
+    }
+    return $parsed
+}
+
+# Installs the pinned pnpm with npm. The default registry is tried first; the
+# npmmirror fallback keeps the one-click script working where registry.npmjs.org
+# is unreachable.
+function Install-PnpmPackage([string]$NpmPath) {
+    foreach ($registry in @($null, $fallbackNpmRegistry)) {
+        $arguments = @('install', '--global', '--no-fund', '--no-audit', "pnpm@$pnpmInstallVersion")
+        if ($null -eq $registry) {
+            Write-Host "[Totoro] Installing pnpm $pnpmInstallVersion with npm..."
+        } else {
+            Write-Host "[Totoro] npm could not reach the default registry; retrying with $registry..." -ForegroundColor Yellow
+            $arguments += "--registry=$registry"
+        }
+        $savedPreference = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            & $NpmPath @arguments
+            $exitCode = $LASTEXITCODE
+        } finally {
+            $ErrorActionPreference = $savedPreference
+        }
+        if ($exitCode -eq 0) {
+            return $true
+        }
+    }
+    return $false
+}
+
+# Returns the pnpm command to use, installing or upgrading it when it is missing
+# or older than $minimumPnpmVersion.
+function Resolve-PnpmCommand([string]$NpmPath) {
+    $candidate = Get-Command pnpm -ErrorAction SilentlyContinue
+    if ($null -ne $candidate) {
+        $version = Get-PnpmVersion $candidate.Source
+        if (($null -ne $version) -and ($version -ge $minimumPnpmVersion)) {
+            Write-Host "[Totoro] pnpm $version detected." -ForegroundColor Green
+            return $candidate
+        }
+        if ($null -eq $version) {
+            Write-Host '[Totoro] The installed pnpm did not report a version; reinstalling it.' -ForegroundColor Yellow
+        } else {
+            Write-Host "[Totoro] pnpm $version is older than the required $minimumPnpmVersion; upgrading it." -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host '[Totoro] pnpm was not found; installing it.' -ForegroundColor Yellow
+    }
+
+    if ([string]::IsNullOrWhiteSpace($NpmPath)) {
+        throw @"
+pnpm $minimumPnpmVersion or newer is required, and npm is needed to install it automatically.
+Reinstall Node.js from https://nodejs.org/ (it bundles npm; see README.md), then run this script again.
+"@
+    }
+
+    if (-not (Install-PnpmPackage -NpmPath $NpmPath)) {
+        throw @"
+Installing pnpm $pnpmInstallVersion automatically failed.
+Install it manually with 'npm install --global pnpm@$pnpmInstallVersion',
+or follow https://pnpm.io/installation, then run this script again.
+"@
+    }
+
+    # npm writes the shim into its global prefix. Put that directory first so a
+    # stale pnpm.exe elsewhere on PATH cannot shadow the fresh install.
+    $globalBinOutput = & $NpmPath prefix --global 2>$null | Select-Object -First 1
+    $globalBin = if ($null -ne $globalBinOutput) { ([string]$globalBinOutput).Trim() } else { '' }
+    if (-not [string]::IsNullOrWhiteSpace($globalBin)) {
+        if (($env:PATH -split ';') -notcontains $globalBin) {
+            $env:PATH = "$globalBin;$env:PATH"
+        }
+    }
+
+    $resolved = Get-Command pnpm -ErrorAction SilentlyContinue
+    $resolvedVersion = if ($null -ne $resolved) { Get-PnpmVersion $resolved.Source } else { $null }
+    if (($null -eq $resolvedVersion) -or ($resolvedVersion -lt $minimumPnpmVersion)) {
+        throw @"
+pnpm was installed, but version $minimumPnpmVersion or newer still cannot be found on PATH.
+Install it manually with 'npm install --global pnpm@$pnpmInstallVersion', then run this script again.
+"@
+    }
+    Write-Host "[Totoro] pnpm $resolvedVersion installed." -ForegroundColor Green
+    return $resolved
+}
+
+# frida ships its native addon as a prebuilt binary that 'frida/scripts/install.js'
+# downloads from GitHub Releases and extracts to 'build/frida_binding.node'.
+# Yarn only runs that install script while adding the package, so a first install
+# that fails (offline GitHub, interrupted 40 MB download) leaves a node_modules
+# tree that yarn considers complete, but that crashes WMPFDebugger at startup with
+# 'Could not locate the bindings file'. Re-running the installer repairs it.
+function Install-FridaNativeBinding {
+    param(
+        [string]$BindingPath,
+        [string]$InstallerPath,
+        [string]$FridaRoot,
+        [string]$BinRoot,
+        [string]$NodePath
+    )
+
+    $fridaPackage = Get-Content -LiteralPath (Join-Path $FridaRoot 'package.json') -Raw | ConvertFrom-Json
+    $napiVersion = if ($fridaPackage.binary.napi_versions) { $fridaPackage.binary.napi_versions[0] } else { 8 }
+    $architecture = switch ($env:PROCESSOR_ARCHITECTURE) {
+        'ARM64' { 'win32-arm64' }
+        'x86' { 'win32-ia32' }
+        default { 'win32-x64' }
+    }
+    $downloadUrl = "https://github.com/frida/frida/releases/download/$($fridaPackage.version)/frida-v$($fridaPackage.version)-napi-v$napiVersion-$architecture.tar.gz"
+
+    $savedPath = $env:PATH
+    $savedLogLevel = $env:npm_config_loglevel
+    $env:PATH = "$BinRoot;$env:PATH"
+    # prebuild-install reports download progress only at the info level.
+    $env:npm_config_loglevel = 'info'
+    try {
+        for ($attempt = 1; $attempt -le 3; $attempt++) {
+            Write-Host "[WMPF] Downloading the frida native binding (attempt $attempt of 3, about 40 MB)..."
+            # frida's installer exits non-zero when the download fails, so keep the error
+            # preference relaxed here and let the file check below decide the outcome.
+            # prebuild-install resolves the package to install from the working directory,
+            # so run it exactly like Yarn's lifecycle script does: inside the frida package.
+            $nativePreference = $ErrorActionPreference
+            $ErrorActionPreference = 'Continue'
+            Push-Location -LiteralPath $FridaRoot
+            try {
+                & $NodePath $InstallerPath
+            } finally {
+                Pop-Location
+                $ErrorActionPreference = $nativePreference
+            }
+            if (Test-Path -LiteralPath $BindingPath) {
+                Write-Host '[WMPF] The frida native binding is ready.' -ForegroundColor Green
+                return
+            }
+            if ($attempt -lt 3) {
+                Write-Host '[WMPF] The download did not complete; retrying...' -ForegroundColor Yellow
+                Start-Sleep -Seconds 2
+            }
+        }
+    } finally {
+        $env:PATH = $savedPath
+        $env:npm_config_loglevel = $savedLogLevel
+    }
+
+    throw @"
+The frida native binding could not be installed, and WMPFDebugger cannot start without it.
+Missing file: $BindingPath
+Download $downloadUrl
+then extract 'build/frida_binding.node' from that archive to the path above and run this script again.
+GitHub Releases must be reachable; a proxy or VPN may be required.
+"@
+}
+
 trap {
     Stop-LocalServices
     if (($null -ne $debuggerProcess) -and (-not $debuggerProcess.HasExited)) {
@@ -45,12 +223,12 @@ trap {
     throw $_
 }
 
+Write-Host '[Totoro] Checking the local environment...'
 try {
     $nodeCommand = Get-Command node -ErrorAction Stop
-    $pnpmCommand = Get-Command pnpm -ErrorAction Stop
 } catch [System.Management.Automation.CommandNotFoundException] {
-    Write-Host 'Node.js and pnpm are required.' -ForegroundColor Red
-    Write-Host 'Install Node.js 20.9+ and pnpm, then run this file again.'
+    Write-Host 'Node.js is required.' -ForegroundColor Red
+    Write-Host 'Install Node.js from https://nodejs.org/ (see README.md), then run this file again.'
     Read-Host 'Press Enter to close'
     exit 1
 }
@@ -59,16 +237,37 @@ $nodeVersion = [version]((& $nodeCommand.Source --version).TrimStart('v'))
 $minimumNodeVersion = if ($SkipDebugger) { [version]'20.9.0' } else { [version]'22.0.0' }
 if ($nodeVersion -lt $minimumNodeVersion) {
     Write-Host "Node.js $minimumNodeVersion or newer is required; found $nodeVersion." -ForegroundColor Red
+    Write-Host 'Upgrade Node.js from https://nodejs.org/ (see README.md), then run this file again.'
     Read-Host 'Press Enter to close'
     exit 1
 }
 
+$npmCommand = Get-Command npm -ErrorAction SilentlyContinue
+$pnpmCommand = Resolve-PnpmCommand -NpmPath $(if ($null -ne $npmCommand) { $npmCommand.Source } else { $null })
+
 if (-not $SkipDebugger) {
-    $gitCommand = Get-Command git -ErrorAction Stop
-    $npxCommand = Get-Command npx -ErrorAction Stop
+    # Git is a documented prerequisite (see README.md); WMPFDebugger is cloned with it.
+    try {
+        $gitCommand = Get-Command git -ErrorAction Stop
+    } catch [System.Management.Automation.CommandNotFoundException] {
+        Write-Host 'Git is required to download WMPFDebugger.' -ForegroundColor Red
+        Write-Host 'Install Git from https://git-scm.com/download/win (see README.md), then run this file again.'
+        Read-Host 'Press Enter to close'
+        exit 1
+    }
+    try {
+        $npxCommand = Get-Command npx -ErrorAction Stop
+    } catch [System.Management.Automation.CommandNotFoundException] {
+        throw 'npx was not found. Reinstall Node.js (it bundles npx); see README.md.'
+    }
     $debuggerRoot = Join-Path $toolsRoot 'WMPFDebugger'
     $debuggerEntry = Join-Path $debuggerRoot 'src\index.ts'
     $tsNodeEntry = Join-Path $debuggerRoot 'node_modules\ts-node\dist\bin.js'
+    $debuggerBinRoot = Join-Path $debuggerRoot 'node_modules\.bin'
+    $prebuildInstallEntry = Join-Path $debuggerRoot 'node_modules\prebuild-install\bin.js'
+    $fridaRoot = Join-Path $debuggerRoot 'node_modules\frida'
+    $fridaInstallerEntry = Join-Path $fridaRoot 'scripts\install.js'
+    $fridaBindingPath = Join-Path $fridaRoot 'build\frida_binding.node'
     $bundledWmpfConfig = Join-Path $PSScriptRoot 'ops\wmpf\addresses.25560.json'
     $wmpfConfigPath = Join-Path $debuggerRoot 'frida\config\win32\addresses.25560.json'
 
@@ -86,17 +285,37 @@ if (-not $SkipDebugger) {
         Copy-Item -LiteralPath $bundledWmpfConfig -Destination $wmpfConfigPath
     }
 
-    if (-not (Test-Path -LiteralPath $tsNodeEntry)) {
+    $installFailure = $null
+    if ((-not (Test-Path -LiteralPath $tsNodeEntry)) -or
+        (-not (Test-Path -LiteralPath $fridaInstallerEntry)) -or
+        (-not (Test-Path -LiteralPath $prebuildInstallEntry))) {
         Write-Host '[WMPF] Installing WMPFDebugger with its Yarn lockfile...'
         Push-Location -LiteralPath $debuggerRoot
         try {
             & $npxCommand.Source --yes yarn@1.22.22 install --frozen-lockfile
             if ($LASTEXITCODE -ne 0) {
-                throw "WMPFDebugger dependency installation failed with exit code $LASTEXITCODE."
+                $installFailure = "WMPFDebugger dependency installation failed with exit code $LASTEXITCODE."
             }
         } finally {
             Pop-Location
         }
+    }
+
+    if ($null -ne $installFailure) {
+        if ((-not (Test-Path -LiteralPath $tsNodeEntry)) -or
+            (-not (Test-Path -LiteralPath $fridaInstallerEntry))) {
+            throw $installFailure
+        }
+        Write-Host "[WMPF] $installFailure The debugger files are present, so the missing frida binding is repaired below." -ForegroundColor Yellow
+    }
+
+    if (-not (Test-Path -LiteralPath $fridaBindingPath)) {
+        Install-FridaNativeBinding `
+            -BindingPath $fridaBindingPath `
+            -InstallerPath $fridaInstallerEntry `
+            -FridaRoot $fridaRoot `
+            -BinRoot $debuggerBinRoot `
+            -NodePath $nodeCommand.Source
     }
 
     $logStamp = Get-Date -Format 'yyyyMMdd-HHmmss'

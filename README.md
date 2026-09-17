@@ -18,11 +18,26 @@ pnpm install
 pnpm dev
 ```
 
+## 环境要求
+
+一键脚本启动时会检查以下组件；「自动」表示脚本会自行安装或升级，其余需要提前装好。
+
+| 组件 | 要求 | 处理方式 |
+| --- | --- | --- |
+| Node.js | 22+（使用 `-SkipDebugger` 时 20.9+） | 需自行安装，脚本只校验版本。`winget install OpenJS.NodeJS.LTS` 或 [nodejs.org](https://nodejs.org/) |
+| pnpm | 11+ | 自动：缺失或版本过低时，脚本用 npm 安装 `pnpm@12.4.2`；npm 默认源不可达时自动回退到 `https://registry.npmmirror.com` |
+| npm | 随 Node.js 提供 | 自动安装 pnpm 时使用；若缺失说明 Node.js 安装不完整，重新安装即可 |
+| Docker Desktop | 任意近期版本 | 需自行安装：[docker.com](https://www.docker.com/products/docker-desktop/)。未设置 `REDIS_URL` 时脚本用它启动本机 Redis 容器；已安装但未运行时脚本会自动启动 |
+| Git | 任意近期版本 | 需自行安装：[git-scm.com](https://git-scm.com/download/win)，脚本用它克隆 WMPFDebugger 源码 |
+| Microsoft Edge 或 Google Chrome | 任意近期版本 | 打开小程序 DevTools 使用，脚本会自动探测，不会自动安装 |
+
+> 网络：首次运行需要从 GitHub Releases 下载 Frida 原生绑定（约 40 MB），耗时较长；下载失败时脚本会自动重试，并在终端给出手动下载地址。
+
 ## Windows 一键本地部署
 
 双击项目根目录的 [`start-local.cmd`](start-local.cmd)。脚本会先按 [WMPFDebugger 中文文档](https://github.com/evi0s/WMPFDebugger/blob/main/README.zh.md) 下载并启动小程序调试器。看到提示后，在微信中打开目标小程序并按任意键；脚本会打开小程序 DevTools，并在终端说明如何从 Network 请求中找到 Token。
 
-脚本还会从 [WMPFDebugger PR #279](https://github.com/evi0s/WMPFDebugger/pull/279) 的固定提交安装 WMPF 25560 静态配置。随后自动完成 Totoro 依赖安装、生产构建与启动，并在服务就绪后打开浏览器。默认使用 `http://127.0.0.1:3000`；端口被占用时会自动尝试后续端口。WMPFDebugger 要求 Node.js 22 或更高版本，首次安装 Frida 依赖可能需要较长时间。
+脚本还会从 [WMPFDebugger PR #279](https://github.com/evi0s/WMPFDebugger/pull/279) 的固定提交安装 WMPF 25560 静态配置。随后自动完成 Totoro 依赖安装、生产构建与启动，并在服务就绪后打开浏览器。默认使用 `http://127.0.0.1:3000`；端口被占用时会自动尝试后续端口。各组件的最低版本和自动处理范围见[环境要求](#环境要求)。
 
 跑步延迟队列还需要 Redis 和独立 Worker。一键脚本会在未配置 `REDIS_URL` 时通过 Docker Desktop 启动本机 `totoro-local-redis` 容器（自动选择空闲端口），并自动启动 Worker；退出脚本时会停止本次启动的容器，队列数据保留在 Docker 卷中。也可以提前设置 `REDIS_URL` 使用已有 Redis，此时脚本不会管理该 Redis 服务。
 
