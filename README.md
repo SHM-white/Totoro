@@ -24,6 +24,8 @@ pnpm dev
 
 脚本还会从 [WMPFDebugger PR #279](https://github.com/evi0s/WMPFDebugger/pull/279) 的固定提交安装 WMPF 25560 静态配置。随后自动完成 Totoro 依赖安装、生产构建与启动，并在服务就绪后打开浏览器。默认使用 `http://127.0.0.1:3000`；端口被占用时会自动尝试后续端口。WMPFDebugger 要求 Node.js 22 或更高版本，首次安装 Frida 依赖可能需要较长时间。
 
+跑步延迟队列还需要 Redis 和独立 Worker。一键脚本会在未配置 `REDIS_URL` 时通过 Docker Desktop 启动本机 `totoro-local-redis` 容器（自动选择空闲端口），并自动启动 Worker；退出脚本时会停止本次启动的容器，队列数据保留在 Docker 卷中。也可以提前设置 `REDIS_URL` 使用已有 Redis，此时脚本不会管理该 Redis 服务。
+
 终端窗口需要在使用期间保持打开，按 `Ctrl+C` 即可停止服务。也可在 PowerShell 中指定端口：
 
 ```powershell

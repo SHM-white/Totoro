@@ -11,8 +11,34 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath $PSScriptRoot
 $debuggerProcess = $null
+$workerProcess = $null
+$dockerCommand = $null
+$redisContainerName = 'totoro-local-redis'
+$redisStartedHere = $false
+$toolsRoot = Join-Path $PSScriptRoot '.local-tools'
+
+function Stop-LocalServices {
+    if (($null -ne $workerProcess) -and (-not $workerProcess.HasExited)) {
+        Stop-Process -Id $workerProcess.Id -ErrorAction SilentlyContinue
+    }
+    if ($redisStartedHere -and ($null -ne $dockerCommand)) {
+        & $dockerCommand.Source stop --time 5 $redisContainerName 2>$null | Out-Null
+    }
+}
+
+function Invoke-DockerProbe([string[]]$Arguments) {
+    $savedPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $output = & $dockerCommand.Source @Arguments 2>$null
+        return @{ ExitCode = $LASTEXITCODE; Output = $output }
+    } finally {
+        $ErrorActionPreference = $savedPreference
+    }
+}
 
 trap {
+    Stop-LocalServices
     if (($null -ne $debuggerProcess) -and (-not $debuggerProcess.HasExited)) {
         Stop-Process -Id $debuggerProcess.Id -ErrorAction SilentlyContinue
     }
@@ -40,7 +66,6 @@ if ($nodeVersion -lt $minimumNodeVersion) {
 if (-not $SkipDebugger) {
     $gitCommand = Get-Command git -ErrorAction Stop
     $npxCommand = Get-Command npx -ErrorAction Stop
-    $toolsRoot = Join-Path $PSScriptRoot '.local-tools'
     $debuggerRoot = Join-Path $toolsRoot 'WMPFDebugger'
     $debuggerEntry = Join-Path $debuggerRoot 'src\index.ts'
     $tsNodeEntry = Join-Path $debuggerRoot 'node_modules\ts-node\dist\bin.js'
@@ -173,10 +198,74 @@ if ($LASTEXITCODE -ne 0) {
     throw "Dependency installation failed with exit code $LASTEXITCODE."
 }
 
+New-Item -ItemType Directory -Path $toolsRoot -Force | Out-Null
+if ([string]::IsNullOrWhiteSpace($env:REDIS_URL)) {
+    $dockerCommand = Get-Command docker -ErrorAction SilentlyContinue
+    if ($null -eq $dockerCommand) {
+        throw 'Redis is required. Install Docker Desktop, or set REDIS_URL to an existing Redis server.'
+    }
+    $dockerInfo = Invoke-DockerProbe @('info', '--format', '{{.ServerVersion}}')
+    if ($dockerInfo.ExitCode -ne 0) {
+        $dockerDesktop = Join-Path $env:ProgramFiles 'Docker\Docker\Docker Desktop.exe'
+        if (-not (Test-Path -LiteralPath $dockerDesktop)) {
+            throw 'Docker Desktop is installed but not running. Start it, or set REDIS_URL to an existing Redis server.'
+        }
+        Write-Host '[Totoro] Starting Docker Desktop for the delayed queue...'
+        Start-Process -FilePath $dockerDesktop -WindowStyle Hidden
+        for ($attempt = 0; $attempt -lt 60; $attempt++) {
+            Start-Sleep -Seconds 1
+            $dockerInfo = Invoke-DockerProbe @('info', '--format', '{{.ServerVersion}}')
+            if ($dockerInfo.ExitCode -eq 0) { break }
+        }
+        if ($dockerInfo.ExitCode -ne 0) { throw 'Docker Desktop did not become ready within 60 seconds.' }
+    }
+    $redisState = Invoke-DockerProbe @('container', 'inspect', '--format', '{{.State.Running}}', $redisContainerName)
+    if (($redisState.ExitCode -eq 0) -and ($redisState.Output -ne 'true')) {
+        $redisStart = Invoke-DockerProbe @('start', $redisContainerName)
+        if ($redisStart.ExitCode -ne 0) {
+            & $dockerCommand.Source rm --force $redisContainerName | Out-Null
+            $redisState = @{ ExitCode = 1; Output = $null }
+        }
+    }
+    if ($redisState.ExitCode -ne 0) {
+        & $dockerCommand.Source run --detach --name $redisContainerName --publish 127.0.0.1::6379 --volume totoro-local-redis-data:/data redis:7-alpine redis-server --appendonly yes | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'Unable to start the local Redis container.' }
+    }
+    $redisStartedHere = $redisState.Output -ne 'true'
+    $redisPort = Invoke-DockerProbe @('port', $redisContainerName, '6379/tcp')
+    if (($redisPort.ExitCode -ne 0) -or ($redisPort.Output -notmatch ':(\d+)$')) {
+        throw 'Unable to determine the local Redis port.'
+    }
+    $env:REDIS_URL = "redis://127.0.0.1:$($matches[1])"
+}
+
 Write-Host '[Totoro] Building the production application...'
 & $pnpmCommand.Source build
 if ($LASTEXITCODE -ne 0) {
     throw "Production build failed with exit code $LASTEXITCODE."
+}
+
+$logStamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+$workerOutput = Join-Path $toolsRoot "totoro-worker-$logStamp.log"
+$workerErrors = Join-Path $toolsRoot "totoro-worker-$logStamp.error.log"
+$workerProcess = Start-Process `
+    -FilePath $nodeCommand.Source `
+    -ArgumentList @('scripts/run-worker.js') `
+    -WorkingDirectory $PSScriptRoot `
+    -RedirectStandardOutput $workerOutput `
+    -RedirectStandardError $workerErrors `
+    -WindowStyle Hidden `
+    -PassThru
+for ($attempt = 0; $attempt -lt 100; $attempt++) {
+    if ($workerProcess.HasExited) { break }
+    if ((Test-Path -LiteralPath $workerOutput) -and
+        (Select-String -LiteralPath $workerOutput -SimpleMatch 'Redis' -Quiet)) { break }
+    Start-Sleep -Milliseconds 200
+}
+if ($workerProcess.HasExited -or
+    -not (Select-String -LiteralPath $workerOutput -SimpleMatch 'Redis' -Quiet)) {
+    $workerFailure = @(Get-Content $workerOutput -ErrorAction SilentlyContinue; Get-Content $workerErrors -ErrorAction SilentlyContinue) -join [Environment]::NewLine
+    throw "Delayed queue Worker failed to start.$([Environment]::NewLine)$workerFailure"
 }
 
 $url = "http://127.0.0.1:$selectedPort"
@@ -201,11 +290,13 @@ if (-not $SkipBrowser) {
 }
 
 try {
-    & $pnpmCommand.Source start -- --hostname 127.0.0.1 --port $selectedPort
+    $nextEntry = Join-Path $PSScriptRoot 'node_modules\next\dist\bin\next'
+    & $nodeCommand.Source $nextEntry start --hostname 127.0.0.1 --port $selectedPort
     if ($LASTEXITCODE -ne 0) {
         throw "The server exited with code $LASTEXITCODE."
     }
 } finally {
+    Stop-LocalServices
     if ($null -ne $browserJob) {
         Stop-Job -Job $browserJob -ErrorAction SilentlyContinue
         Remove-Job -Job $browserJob -Force -ErrorAction SilentlyContinue
