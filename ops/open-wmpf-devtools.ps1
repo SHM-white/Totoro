@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [Parameter(Mandatory)]
     [ValidateScript({ Test-Path -LiteralPath $_ -PathType Leaf })]
@@ -32,7 +32,7 @@ while ($remotePort -le 9239) {
 }
 
 if (-not $portAvailable) {
-    throw 'No free Edge debugging port found between 9229 and 9239.'
+    throw '未找到空闲的 Edge 调试端口（9229–9239）。'
 }
 
 $profilePath = Join-Path $ToolsRoot "edge-devtools-$remotePort"
@@ -55,7 +55,7 @@ try {
     $browserReady = $false
     for ($attempt = 0; $attempt -lt 100; $attempt++) {
         if ($browserProcess.HasExited) {
-            throw 'The DevTools browser exited before its debugging API was ready.'
+            throw 'DevTools 浏览器在调试接口就绪前退出了。'
         }
         try {
             Invoke-RestMethod -Uri "$debuggingOrigin/json/version" -TimeoutSec 1 | Out-Null
@@ -67,7 +67,7 @@ try {
     }
 
     if (-not $browserReady) {
-        throw 'The DevTools browser debugging API did not become ready.'
+        throw 'DevTools 浏览器的调试接口未能就绪。'
     }
 
     $encodedUrl = [System.Uri]::EscapeDataString($DevToolsUrl)
@@ -76,13 +76,13 @@ try {
         -Uri "$debuggingOrigin/json/new?$encodedUrl" `
         -TimeoutSec 5
     if ([string]::IsNullOrWhiteSpace($target.id)) {
-        throw 'The browser did not return a DevTools target ID.'
+        throw '浏览器未返回 DevTools 目标 ID。'
     }
 
     Invoke-RestMethod `
         -Uri "$debuggingOrigin/json/activate/$($target.id)" `
         -TimeoutSec 5 | Out-Null
-    Write-Host "Mini-program DevTools opened at $DevToolsUrl" -ForegroundColor Green
+    Write-Host "小程序 DevTools 已打开：$DevToolsUrl" -ForegroundColor Green
 } catch {
     if (-not $browserProcess.HasExited) {
         Stop-Process -Id $browserProcess.Id -Force -ErrorAction SilentlyContinue

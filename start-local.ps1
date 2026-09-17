@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [ValidateRange(1, 65535)]
     [int]$Port = 3000,
@@ -71,9 +71,9 @@ function Install-PnpmPackage([string]$NpmPath) {
     foreach ($registry in @($null, $fallbackNpmRegistry)) {
         $arguments = @('install', '--global', '--no-fund', '--no-audit', "pnpm@$pnpmInstallVersion")
         if ($null -eq $registry) {
-            Write-Host "[Totoro] Installing pnpm $pnpmInstallVersion with npm..."
+            Write-Host "[Totoro] 正在用 npm 安装 pnpm $pnpmInstallVersion..."
         } else {
-            Write-Host "[Totoro] npm could not reach the default registry; retrying with $registry..." -ForegroundColor Yellow
+            Write-Host "[Totoro] npm 无法访问默认源，改用 $registry 重试..." -ForegroundColor Yellow
             $arguments += "--registry=$registry"
         }
         $savedPreference = $ErrorActionPreference
@@ -98,30 +98,30 @@ function Resolve-PnpmCommand([string]$NpmPath) {
     if ($null -ne $candidate) {
         $version = Get-PnpmVersion $candidate.Source
         if (($null -ne $version) -and ($version -ge $minimumPnpmVersion)) {
-            Write-Host "[Totoro] pnpm $version detected." -ForegroundColor Green
+            Write-Host "[Totoro] 已检测到 pnpm $version。" -ForegroundColor Green
             return $candidate
         }
         if ($null -eq $version) {
-            Write-Host '[Totoro] The installed pnpm did not report a version; reinstalling it.' -ForegroundColor Yellow
+            Write-Host '[Totoro] 已安装的 pnpm 无法报告版本，正在重新安装。' -ForegroundColor Yellow
         } else {
-            Write-Host "[Totoro] pnpm $version is older than the required $minimumPnpmVersion; upgrading it." -ForegroundColor Yellow
+            Write-Host "[Totoro] pnpm $version 低于要求的 $minimumPnpmVersion，正在升级。" -ForegroundColor Yellow
         }
     } else {
-        Write-Host '[Totoro] pnpm was not found; installing it.' -ForegroundColor Yellow
+        Write-Host '[Totoro] 未找到 pnpm，正在安装。' -ForegroundColor Yellow
     }
 
     if ([string]::IsNullOrWhiteSpace($NpmPath)) {
         throw @"
-pnpm $minimumPnpmVersion or newer is required, and npm is needed to install it automatically.
-Reinstall Node.js from https://nodejs.org/ (it bundles npm; see README.md), then run this script again.
+需要 pnpm $minimumPnpmVersion 或更高版本，且需要 npm 来自动安装。
+请从 https://nodejs.org/ 重新安装 Node.js（自带 npm，参见 README.md），然后重新运行本脚本。
 "@
     }
 
     if (-not (Install-PnpmPackage -NpmPath $NpmPath)) {
         throw @"
-Installing pnpm $pnpmInstallVersion automatically failed.
-Install it manually with 'npm install --global pnpm@$pnpmInstallVersion',
-or follow https://pnpm.io/installation, then run this script again.
+自动安装 pnpm $pnpmInstallVersion 失败。
+请手动执行 'npm install --global pnpm@$pnpmInstallVersion'，
+或参考 https://pnpm.io/installation，然后重新运行本脚本。
 "@
     }
 
@@ -139,11 +139,11 @@ or follow https://pnpm.io/installation, then run this script again.
     $resolvedVersion = if ($null -ne $resolved) { Get-PnpmVersion $resolved.Source } else { $null }
     if (($null -eq $resolvedVersion) -or ($resolvedVersion -lt $minimumPnpmVersion)) {
         throw @"
-pnpm was installed, but version $minimumPnpmVersion or newer still cannot be found on PATH.
-Install it manually with 'npm install --global pnpm@$pnpmInstallVersion', then run this script again.
+pnpm 已安装，但仍无法在 PATH 中找到 $minimumPnpmVersion 或更高版本。
+请手动执行 'npm install --global pnpm@$pnpmInstallVersion'，然后重新运行本脚本。
 "@
     }
-    Write-Host "[Totoro] pnpm $resolvedVersion installed." -ForegroundColor Green
+    Write-Host "[Totoro] pnpm $resolvedVersion 安装完成。" -ForegroundColor Green
     return $resolved
 }
 
@@ -178,7 +178,7 @@ function Install-FridaNativeBinding {
     $env:npm_config_loglevel = 'info'
     try {
         for ($attempt = 1; $attempt -le 3; $attempt++) {
-            Write-Host "[WMPF] Downloading the frida native binding (attempt $attempt of 3, about 40 MB)..."
+            Write-Host "[WMPF] 正在下载 frida 原生绑定（第 $attempt/3 次尝试，约 40 MB）..."
             # frida's installer exits non-zero when the download fails, so keep the error
             # preference relaxed here and let the file check below decide the outcome.
             # prebuild-install resolves the package to install from the working directory,
@@ -193,11 +193,11 @@ function Install-FridaNativeBinding {
                 $ErrorActionPreference = $nativePreference
             }
             if (Test-Path -LiteralPath $BindingPath) {
-                Write-Host '[WMPF] The frida native binding is ready.' -ForegroundColor Green
+                Write-Host '[WMPF] frida 原生绑定已就绪。' -ForegroundColor Green
                 return
             }
             if ($attempt -lt 3) {
-                Write-Host '[WMPF] The download did not complete; retrying...' -ForegroundColor Yellow
+                Write-Host '[WMPF] 下载未完成，正在重试...' -ForegroundColor Yellow
                 Start-Sleep -Seconds 2
             }
         }
@@ -207,11 +207,11 @@ function Install-FridaNativeBinding {
     }
 
     throw @"
-The frida native binding could not be installed, and WMPFDebugger cannot start without it.
-Missing file: $BindingPath
-Download $downloadUrl
-then extract 'build/frida_binding.node' from that archive to the path above and run this script again.
-GitHub Releases must be reachable; a proxy or VPN may be required.
+frida 原生绑定安装失败，缺少它 WMPFDebugger 无法启动。
+缺失文件：$BindingPath
+请下载 $downloadUrl
+解出其中的 'build/frida_binding.node' 放到上述路径，然后重新运行本脚本。
+需要能访问 GitHub Releases，可能需要代理或 VPN。
 "@
 }
 
@@ -223,22 +223,22 @@ trap {
     throw $_
 }
 
-Write-Host '[Totoro] Checking the local environment...'
+Write-Host '[Totoro] 正在检查本地环境...'
 try {
     $nodeCommand = Get-Command node -ErrorAction Stop
 } catch [System.Management.Automation.CommandNotFoundException] {
-    Write-Host 'Node.js is required.' -ForegroundColor Red
-    Write-Host 'Install Node.js from https://nodejs.org/ (see README.md), then run this file again.'
-    Read-Host 'Press Enter to close'
+    Write-Host '需要安装 Node.js。' -ForegroundColor Red
+    Write-Host '请从 https://nodejs.org/ 安装（参见 README.md），然后重新运行本脚本。'
+    Read-Host '按回车键关闭窗口'
     exit 1
 }
 
 $nodeVersion = [version]((& $nodeCommand.Source --version).TrimStart('v'))
 $minimumNodeVersion = if ($SkipDebugger) { [version]'20.9.0' } else { [version]'22.0.0' }
 if ($nodeVersion -lt $minimumNodeVersion) {
-    Write-Host "Node.js $minimumNodeVersion or newer is required; found $nodeVersion." -ForegroundColor Red
-    Write-Host 'Upgrade Node.js from https://nodejs.org/ (see README.md), then run this file again.'
-    Read-Host 'Press Enter to close'
+    Write-Host "需要 Node.js $minimumNodeVersion 或更高版本；当前为 $nodeVersion。" -ForegroundColor Red
+    Write-Host '请从 https://nodejs.org/ 升级 Node.js（参见 README.md），然后重新运行本脚本。'
+    Read-Host '按回车键关闭窗口'
     exit 1
 }
 
@@ -250,15 +250,15 @@ if (-not $SkipDebugger) {
     try {
         $gitCommand = Get-Command git -ErrorAction Stop
     } catch [System.Management.Automation.CommandNotFoundException] {
-        Write-Host 'Git is required to download WMPFDebugger.' -ForegroundColor Red
-        Write-Host 'Install Git from https://git-scm.com/download/win (see README.md), then run this file again.'
-        Read-Host 'Press Enter to close'
+        Write-Host '需要 Git 才能下载 WMPFDebugger。' -ForegroundColor Red
+        Write-Host '请从 https://git-scm.com/download/win 安装 Git（参见 README.md），然后重新运行本脚本。'
+        Read-Host '按回车键关闭窗口'
         exit 1
     }
     try {
         $npxCommand = Get-Command npx -ErrorAction Stop
     } catch [System.Management.Automation.CommandNotFoundException] {
-        throw 'npx was not found. Reinstall Node.js (it bundles npx); see README.md.'
+        throw '未找到 npx。请重新安装 Node.js（自带 npx）；参见 README.md。'
     }
     $debuggerRoot = Join-Path $toolsRoot 'WMPFDebugger'
     $debuggerEntry = Join-Path $debuggerRoot 'src\index.ts'
@@ -273,15 +273,15 @@ if (-not $SkipDebugger) {
 
     New-Item -ItemType Directory -Path $toolsRoot -Force | Out-Null
     if (-not (Test-Path -LiteralPath $debuggerEntry)) {
-        Write-Host '[WMPF] Downloading WMPFDebugger...'
+        Write-Host '[WMPF] 正在下载 WMPFDebugger...'
         & $gitCommand.Source clone --depth 1 https://github.com/evi0s/WMPFDebugger.git $debuggerRoot
         if ($LASTEXITCODE -ne 0) {
-            throw "WMPFDebugger download failed with exit code $LASTEXITCODE."
+            throw "WMPFDebugger 下载失败，退出码 $LASTEXITCODE。"
         }
     }
 
     if (-not (Test-Path -LiteralPath $wmpfConfigPath)) {
-        Write-Host '[WMPF] Installing the WMPF 25560 configuration from PR #279...'
+        Write-Host '[WMPF] 正在安装 PR #279 中的 WMPF 25560 配置...'
         Copy-Item -LiteralPath $bundledWmpfConfig -Destination $wmpfConfigPath
     }
 
@@ -289,12 +289,12 @@ if (-not $SkipDebugger) {
     if ((-not (Test-Path -LiteralPath $tsNodeEntry)) -or
         (-not (Test-Path -LiteralPath $fridaInstallerEntry)) -or
         (-not (Test-Path -LiteralPath $prebuildInstallEntry))) {
-        Write-Host '[WMPF] Installing WMPFDebugger with its Yarn lockfile...'
+        Write-Host '[WMPF] 正在按 Yarn lockfile 安装 WMPFDebugger 依赖...'
         Push-Location -LiteralPath $debuggerRoot
         try {
             & $npxCommand.Source --yes yarn@1.22.22 install --frozen-lockfile
             if ($LASTEXITCODE -ne 0) {
-                $installFailure = "WMPFDebugger dependency installation failed with exit code $LASTEXITCODE."
+                $installFailure = "WMPFDebugger 依赖安装失败，退出码 $LASTEXITCODE。"
             }
         } finally {
             Pop-Location
@@ -306,7 +306,7 @@ if (-not $SkipDebugger) {
             (-not (Test-Path -LiteralPath $fridaInstallerEntry))) {
             throw $installFailure
         }
-        Write-Host "[WMPF] $installFailure The debugger files are present, so the missing frida binding is repaired below." -ForegroundColor Yellow
+        Write-Host "[WMPF] $installFailure 调试器文件已存在，稍后将自动修复缺失的 frida 绑定。" -ForegroundColor Yellow
     }
 
     if (-not (Test-Path -LiteralPath $fridaBindingPath)) {
@@ -321,7 +321,7 @@ if (-not $SkipDebugger) {
     $logStamp = Get-Date -Format 'yyyyMMdd-HHmmss'
     $debuggerOutput = Join-Path $toolsRoot "wmpf-debugger-$logStamp.log"
     $debuggerErrors = Join-Path $toolsRoot "wmpf-debugger-$logStamp.error.log"
-    Write-Host '[WMPF] Starting WMPFDebugger (README step 2)...'
+    Write-Host '[WMPF] 正在启动 WMPFDebugger（README 第 2 步）...'
     $debuggerProcess = Start-Process `
         -FilePath $nodeCommand.Source `
         -ArgumentList @("`"$tsNodeEntry`"", 'src/index.ts') `
@@ -338,7 +338,7 @@ if (-not $SkipDebugger) {
                 Get-Content -LiteralPath $debuggerOutput -ErrorAction SilentlyContinue
                 Get-Content -LiteralPath $debuggerErrors -ErrorAction SilentlyContinue
             ) -join [Environment]::NewLine
-            throw "WMPFDebugger stopped before it was ready.$([Environment]::NewLine)$failureDetails"
+            throw "WMPFDebugger 未就绪就退出了。$([Environment]::NewLine)$failureDetails"
         }
         if ((Test-Path -LiteralPath $debuggerOutput) -and
             (Select-String -LiteralPath $debuggerOutput -SimpleMatch '[frida] script loaded' -Quiet)) {
@@ -349,11 +349,11 @@ if (-not $SkipDebugger) {
     }
 
     if (-not $debuggerReady) {
-        throw "WMPFDebugger did not become ready. See $debuggerOutput and $debuggerErrors."
+        throw "WMPFDebugger 未能就绪。请查看 $debuggerOutput 与 $debuggerErrors。"
     }
 
-    Write-Host 'WMPFDebugger is ready. Now open the target mini program in WeChat.' -ForegroundColor Green
-    Write-Host 'After the mini program is fully open, press any key here...'
+    Write-Host 'WMPFDebugger 已就绪。现在请在微信中打开目标小程序。' -ForegroundColor Green
+    Write-Host '小程序完全打开后，在此按任意键继续...'
     [void][Console]::ReadKey($true)
 
     $devToolsUrl = 'devtools://devtools/bundled/inspector.html?ws=127.0.0.1:62000'
@@ -368,22 +368,22 @@ if (-not $SkipDebugger) {
         Where-Object { Test-Path -LiteralPath $_ } |
         Select-Object -First 1
     if ($null -eq $chromiumBrowser) {
-        throw 'Microsoft Edge or Google Chrome is required to open the mini-program DevTools.'
+        throw '打开小程序 DevTools 需要 Microsoft Edge 或 Google Chrome。'
     }
 
-    Write-Host '[WMPF] Opening the mini-program DevTools (README step 4)...'
+    Write-Host '[WMPF] 正在打开小程序 DevTools（README 第 4 步）...'
     & (Join-Path $PSScriptRoot 'ops\open-wmpf-devtools.ps1') `
         -BrowserPath $chromiumBrowser `
         -DevToolsUrl $devToolsUrl `
         -ToolsRoot $toolsRoot
     Write-Host ''
-    Write-Host 'WHERE TO FIND THE TOKEN' -ForegroundColor Cyan
-    Write-Host '1. In DevTools, open the Network tab and keep recording enabled.'
-    Write-Host '2. In the mini program, log in or refresh/open the home or running page.'
-    Write-Host '3. Filter for GetStudentInfoByToken. If absent, try getSunrunPaper or wxxcx.'
-    Write-Host '4. Open a request and check Payload for token, or Headers for Authorization.'
-    Write-Host '5. Copy only the token value (remove the leading "Bearer ") into Totoro.'
-    Write-Host 'Treat this token like a password: do not share, screenshot, or commit it.' -ForegroundColor Yellow
+    Write-Host '在这里找到 TOKEN' -ForegroundColor Cyan
+    Write-Host '1. 在 DevTools 中打开 Network（网络）面板，保持记录开启。'
+    Write-Host '2. 在小程序里登录，或刷新/打开首页、跑步页。'
+    Write-Host '3. 过滤 GetStudentInfoByToken；如果没有，试试 getSunrunPaper 或 wxxcx。'
+    Write-Host '4. 打开一个请求，在 Payload 中查看 token，或在 Headers 中查看 Authorization。'
+    Write-Host '5. 只复制 token 值（去掉开头的 "Bearer "）填入 Totoro。'
+    Write-Host '请把 token 当作密码保管：不要分享、截图或提交到仓库。' -ForegroundColor Yellow
     Write-Host ''
 }
 
@@ -406,37 +406,37 @@ while ($selectedPort -le [Math]::Min($Port + 10, 65535)) {
 }
 
 if (-not $portAvailable) {
-    Write-Host "No free port found between $Port and $($Port + 10)." -ForegroundColor Red
-    Read-Host 'Press Enter to close'
+    Write-Host "在 $Port 到 $($Port + 10) 之间没有找到可用端口。" -ForegroundColor Red
+    Read-Host '按回车键关闭窗口'
     exit 1
 }
 
-Write-Host '[Totoro] Installing dependencies...'
+Write-Host '[Totoro] 正在安装依赖...'
 & $pnpmCommand.Source install --frozen-lockfile --prefer-offline
 if ($LASTEXITCODE -ne 0) {
-    throw "Dependency installation failed with exit code $LASTEXITCODE."
+    throw "依赖安装失败，退出码 $LASTEXITCODE。"
 }
 
 New-Item -ItemType Directory -Path $toolsRoot -Force | Out-Null
 if ([string]::IsNullOrWhiteSpace($env:REDIS_URL)) {
     $dockerCommand = Get-Command docker -ErrorAction SilentlyContinue
     if ($null -eq $dockerCommand) {
-        throw 'Redis is required. Install Docker Desktop, or set REDIS_URL to an existing Redis server.'
+        throw '需要 Redis。请安装 Docker Desktop，或设置 REDIS_URL 指向已有的 Redis 服务。'
     }
     $dockerInfo = Invoke-DockerProbe @('info', '--format', '{{.ServerVersion}}')
     if ($dockerInfo.ExitCode -ne 0) {
         $dockerDesktop = Join-Path $env:ProgramFiles 'Docker\Docker\Docker Desktop.exe'
         if (-not (Test-Path -LiteralPath $dockerDesktop)) {
-            throw 'Docker Desktop is installed but not running. Start it, or set REDIS_URL to an existing Redis server.'
+            throw 'Docker Desktop 已安装但未运行。请启动它，或设置 REDIS_URL 指向已有的 Redis 服务。'
         }
-        Write-Host '[Totoro] Starting Docker Desktop for the delayed queue...'
+        Write-Host '[Totoro] 正在为延迟队列启动 Docker Desktop...'
         Start-Process -FilePath $dockerDesktop -WindowStyle Hidden
         for ($attempt = 0; $attempt -lt 60; $attempt++) {
             Start-Sleep -Seconds 1
             $dockerInfo = Invoke-DockerProbe @('info', '--format', '{{.ServerVersion}}')
             if ($dockerInfo.ExitCode -eq 0) { break }
         }
-        if ($dockerInfo.ExitCode -ne 0) { throw 'Docker Desktop did not become ready within 60 seconds.' }
+        if ($dockerInfo.ExitCode -ne 0) { throw 'Docker Desktop 在 60 秒内未就绪。' }
     }
     $redisState = Invoke-DockerProbe @('container', 'inspect', '--format', '{{.State.Running}}', $redisContainerName)
     if (($redisState.ExitCode -eq 0) -and ($redisState.Output -ne 'true')) {
@@ -448,20 +448,20 @@ if ([string]::IsNullOrWhiteSpace($env:REDIS_URL)) {
     }
     if ($redisState.ExitCode -ne 0) {
         & $dockerCommand.Source run --detach --name $redisContainerName --publish 127.0.0.1::6379 --volume totoro-local-redis-data:/data redis:7-alpine redis-server --appendonly yes | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw 'Unable to start the local Redis container.' }
+        if ($LASTEXITCODE -ne 0) { throw '无法启动本地 Redis 容器。' }
     }
     $redisStartedHere = $redisState.Output -ne 'true'
     $redisPort = Invoke-DockerProbe @('port', $redisContainerName, '6379/tcp')
     if (($redisPort.ExitCode -ne 0) -or ($redisPort.Output -notmatch ':(\d+)$')) {
-        throw 'Unable to determine the local Redis port.'
+        throw '无法确定本地 Redis 端口。'
     }
     $env:REDIS_URL = "redis://127.0.0.1:$($matches[1])"
 }
 
-Write-Host '[Totoro] Building the production application...'
+Write-Host '[Totoro] 正在构建生产版本...'
 & $pnpmCommand.Source build
 if ($LASTEXITCODE -ne 0) {
-    throw "Production build failed with exit code $LASTEXITCODE."
+    throw "生产构建失败，退出码 $LASTEXITCODE。"
 }
 
 $logStamp = Get-Date -Format 'yyyyMMdd-HHmmss'
@@ -484,12 +484,12 @@ for ($attempt = 0; $attempt -lt 100; $attempt++) {
 if ($workerProcess.HasExited -or
     -not (Select-String -LiteralPath $workerOutput -SimpleMatch 'Redis' -Quiet)) {
     $workerFailure = @(Get-Content $workerOutput -ErrorAction SilentlyContinue; Get-Content $workerErrors -ErrorAction SilentlyContinue) -join [Environment]::NewLine
-    throw "Delayed queue Worker failed to start.$([Environment]::NewLine)$workerFailure"
+    throw "延迟队列 Worker 启动失败。$([Environment]::NewLine)$workerFailure"
 }
 
 $url = "http://127.0.0.1:$selectedPort"
-Write-Host "[Totoro] Starting at $url"
-Write-Host 'Press Ctrl+C to stop the server.' -ForegroundColor Cyan
+Write-Host "[Totoro] 服务已启动：$url"
+Write-Host '按 Ctrl+C 停止服务。' -ForegroundColor Cyan
 
 $browserJob = $null
 if (-not $SkipBrowser) {
@@ -512,7 +512,7 @@ try {
     $nextEntry = Join-Path $PSScriptRoot 'node_modules\next\dist\bin\next'
     & $nodeCommand.Source $nextEntry start --hostname 127.0.0.1 --port $selectedPort
     if ($LASTEXITCODE -ne 0) {
-        throw "The server exited with code $LASTEXITCODE."
+        throw "服务已退出，退出码 $LASTEXITCODE。"
     }
 } finally {
     Stop-LocalServices

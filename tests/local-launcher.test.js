@@ -78,3 +78,15 @@ test('README documents the prerequisites the launcher does not install', async (
   assert.match(readme, /Git\s*\|\s*任意近期版本/);
   assert.doesNotMatch(readme, /Git\s*\|\s*可选/);
 });
+
+test('launcher scripts carry a UTF-8 BOM for their Chinese prompts', async () => {
+  for (const [name, path] of [['start-local.ps1', launcherPath], ['open-wmpf-devtools.ps1', devToolsLauncherPath]]) {
+    const bytes = await readFile(path);
+
+    // start-local.cmd launches Windows PowerShell 5.1, which decodes scripts with
+    // the ANSI code page when no BOM is present, turning every Chinese prompt into
+    // mojibake. The BOM keeps the prompts readable.
+    assert.deepEqual([...bytes.subarray(0, 3)], [0xef, 0xbb, 0xbf], `${name} must start with a UTF-8 BOM`);
+    assert.match(bytes.toString('utf8'), /[\u4e00-\u9fff]/, `${name} is expected to contain Chinese prompts`);
+  }
+});
