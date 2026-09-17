@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildRunFixture, distanceOfTrack } from '../lib/server/run-data.js';
-import { startRun } from '../lib/server/start-run.js';
+import {
+  buildRunFixture,
+  createRunPlan,
+  distanceOfTrack,
+  summarizeRunPlan,
+} from '../lib/server/run-data.js';
+import { completeRun, prepareRun, startRun } from '../lib/server/start-run.js';
 
 const task = {
   taskId: 'paper-1', name: '跑步任务', mileage: '3.20', minTime: '10', maxTime: '25', fitDegree: '0.60',
@@ -19,10 +24,18 @@ const route = {
 const identity = { token: 'fixture-token', stuNumber: 'student-1', schoolCode: 'school-1' };
 
 test('fixture follows the selected route with realistic mini-program fields', () => {
-  const fixture = buildRunFixture({ task, route, identity, now: new Date('2026-09-14T06:30:00+08:00') });
+  const now = new Date('2026-09-14T06:30:00+08:00');
+  const fixture = buildRunFixture({ task, route, identity, now });
   const points = fixture.detail.pointList;
+  const alternateFixture = buildRunFixture({ task, route, identity, now });
   assert.ok(points.length > 250);
   assert.ok(Math.abs(distanceOfTrack(points) / 1000 - 3.2) < 0.02);
+  assert.notDeepEqual(
+    points.map(({ latitude, longitude }) => ({ latitude, longitude })),
+    alternateFixture.detail.pointList.map(({ latitude, longitude }) => ({ latitude, longitude })),
+  );
+  const segmentDistances = points.slice(1).map((point, index) => distanceOfTrack([points[index], point]));
+  assert.ok(segmentDistances.every(distance => distance > 0 && distance < 35));
   assert.match(fixture.exercise.avgSpeed, /^\d+'\d{2}"$/);
   assert.match(fixture.exercise.usedTime, /^00:\d{2}:\d{2}$/);
   assert.equal(fixture.begin.paperId, 'paper-1');
@@ -33,6 +46,26 @@ test('fixture follows the selected route with realistic mini-program fields', ()
   assert.ok(points.every((point, index) => Number.isFinite(point.timestamp)
     && /^\d{2}:\d{2}:\d{2}$/.test(point.time)
     && (!index || point.timestamp > points[index - 1].timestamp)));
+  const timestampGaps = points.slice(1).map((point, index) => point.timestamp - points[index].timestamp);
+  assert.ok(new Set(timestampGaps).size > 1);
+});
+
+test('run plan randomizes bounded time and stride while preserving preview metrics', () => {
+  const plans = Array.from({ length: 12 }, () => createRunPlan(task));
+  for (const plan of plans) {
+    assert.equal(plan.targetMeters, 3200);
+    assert.ok(plan.durationSeconds >= 735 && plan.durationSeconds <= 1365);
+    assert.ok(plan.strideMeters >= 0.7 && plan.strideMeters <= 0.86);
+  }
+  assert.ok(new Set(plans.map(plan => `${plan.durationSeconds}:${plan.strideMeters}`)).size > 1);
+
+  const plan = plans[0];
+  const preview = summarizeRunPlan({ task, route, plan });
+  const fixture = buildRunFixture({ task, route, identity }, { plan });
+  assert.deepEqual(
+    (({ routeName, km, usedTime, avgSpeed, steps }) => ({ routeName, km, usedTime, avgSpeed, steps }))(fixture.summary),
+    preview,
+  );
 });
 
 test('start run sends the complete mini-program contract', async () => {
@@ -82,6 +115,44 @@ test('start run rejects invalid origins and incomplete identity before fetching'
   }), /缺少账号资料/);
 });
 
+test('delayed workflow creates the session now and only completes it later', async () => {
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    const endpoint = new URL(url).pathname;
+    calls.push({ endpoint, body: JSON.parse(options.body) });
+    const replies = {
+      '/wxxcx/platform/camera/currentTimeMillis': { status: '00', code: '0', body: 1 },
+      '/wxxcx/platform/sunrunFace/selectSunRunStartConfiguration': { status: '00', code: '0', body: { sunrunStartFace: '0', sunrunPointRandom: '0' } },
+      '/wxxcx/platform/camera/getCameraConfig': { status: '00', code: '0', body: { flag: 0 } },
+      '/wxxcx/platform/sunrunFace/selectSunRunRandomConfiguration': { status: '00', code: '0', body: {} },
+      '/wxxcx/platform/sunrunFace/startUpNote': { status: '00', code: '0' },
+      '/wxxcx/sunrun/getRunBegin': { status: '00', code: '0', scantronId: 'prepared-session-1' },
+      '/wxxcx/sunrun/getRunPointList': { status: '00', code: '0', data: [] },
+      '/wxxcx/sunrun/getRunPointListAbnormal': { status: '00', code: '0', data: [] },
+      '/wxxcx/sunrun/sunRunExercises': { status: '00', code: '0' },
+      '/wxxcx/platform/recrecord/sunRunExercisesDetail': { status: '00', code: '0' },
+    };
+    return Response.json(replies[endpoint]);
+  };
+  const now = new Date('2026-09-15T10:00:00.000Z');
+  const prepared = await prepareRun({ task, route, ...identity }, {
+    baseUrl: 'https://sunrun-test.example.com', fetchImpl, now,
+  });
+  assert.equal(prepared.scantronId, 'prepared-session-1');
+  assert.equal(calls.some(call => call.endpoint === '/wxxcx/sunrun/sunRunExercises'), false);
+
+  const preparationCount = calls.length;
+  await completeRun({ task, route, ...identity }, prepared, {
+    baseUrl: 'https://sunrun-test.example.com', fetchImpl,
+  });
+  assert.deepEqual(calls.slice(preparationCount).map(call => call.endpoint), [
+    '/wxxcx/sunrun/sunRunExercises',
+    '/wxxcx/platform/recrecord/sunRunExercisesDetail',
+  ]);
+  assert.equal(calls.filter(call => call.endpoint === '/wxxcx/sunrun/getRunBegin').length, 1);
+  assert.ok(calls.slice(preparationCount).every(call => call.body.scantronId === 'prepared-session-1'));
+});
+
 test('a route-less task creates a real session and submits an empty configured route', async () => {
   const calls = [];
   const fetchImpl = async (url, options) => {
@@ -127,6 +198,14 @@ test('a route-less task creates a real session and submits an empty configured r
   assert.equal(calls[7].body.scantronId, 'route-free-session-1');
   assert.equal(calls[7].body.pointList.length, result.track.pointCount);
   assert.ok(Math.abs(distanceOfTrack(calls[7].body.pointList) / 1000 - 3.2) < 0.02);
+  assert.deepEqual(
+    { longitude: calls[7].body.pointList[0].longitude, latitude: calls[7].body.pointList[0].latitude },
+    { longitude: 118.789377, latitude: 31.939196 },
+  );
+  assert.ok(calls[7].body.pointList.every(point => (
+    point.longitude >= 118.788176 && point.longitude <= 118.792038
+    && point.latitude >= 31.934225 && point.latitude <= 31.93925
+  )));
 });
 
 test('start run stops before creating a session when face verification is required', async () => {

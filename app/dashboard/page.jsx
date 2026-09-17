@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { LogOut, RefreshCcw } from 'lucide-react';
 import { getRunTasks } from '../../lib/api';
 import StartRunPanel from '../../components/StartRunPanel';
+import MorningSignPanel from '../../components/MorningSignPanel';
+import DiscussionComments from '../../components/DiscussionComments';
 import useStore from '../../lib/store';
 
 export default function DashboardPage() {
@@ -16,6 +18,7 @@ export default function DashboardPage() {
   const [taskError, setTaskError] = useState('');
   const [tasksLoading, setTasksLoading] = useState(true);
   const [revision, setRevision] = useState(0);
+  const [activeTaskType, setActiveTaskType] = useState('run');
   const task = tasks.find(item => item.taskId === taskId) || tasks[0];
   const route = task?.runPointList.find(point => point.pointId === pointId) || task?.runPointList[0];
 
@@ -41,12 +44,31 @@ export default function DashboardPage() {
     if (hasHydrated && !isLoggedIn) router.replace('/');
   }, [hasHydrated, isLoggedIn, router]);
 
+  function selectTaskType(nextTaskType) {
+    setActiveTaskType(nextTaskType);
+  }
+
+  function handleTaskTabKeyDown(event) {
+    const taskTypes = ['run', 'morning'];
+    const currentIndex = taskTypes.indexOf(event.currentTarget.dataset.taskType);
+    let nextIndex = currentIndex;
+    if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % taskTypes.length;
+    if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + taskTypes.length) % taskTypes.length;
+    if (event.key === 'Home') nextIndex = 0;
+    if (event.key === 'End') nextIndex = taskTypes.length - 1;
+    if (nextIndex === currentIndex) return;
+    event.preventDefault();
+    const nextTaskType = taskTypes[nextIndex];
+    selectTaskType(nextTaskType);
+    document.getElementById(`${nextTaskType}-task-tab`)?.focus();
+  }
+
   if (!hasHydrated || !isLoggedIn) return <main className="screen">加载中</main>;
 
   return (
     <main className="screen app-screen">
       <header className="top-strip">
-        <div><p className="eyebrow">Sunrun</p><h1 className="page-heading">跑步任务</h1></div>
+        <div><p className="eyebrow">Sunrun / Morning Sign</p><h1 className="page-heading">运动打卡</h1></div>
         <button className="icon-text-button" onClick={() => { logout(); router.replace('/'); }} type="button">
           <LogOut size={18} />退出
         </button>
@@ -55,7 +77,17 @@ export default function DashboardPage() {
         <div><p className="block-label">当前账号</p><h2>{userInfo?.stuName || '用户'}</h2></div>
         <p>{userInfo?.stuNumber || '-'} / {userInfo?.schoolName || '-'}</p>
       </section>
-      <section className="command-panel">
+      <div className="task-tabs" role="tablist" aria-label="任务类型">
+        <button id="run-task-tab" className="task-tab" type="button" role="tab"
+          aria-selected={activeTaskType === 'run'} aria-controls="run-task-panel"
+          tabIndex={activeTaskType === 'run' ? 0 : -1} data-task-type="run"
+          onKeyDown={handleTaskTabKeyDown} onClick={() => selectTaskType('run')}>跑步任务</button>
+        <button id="morning-task-tab" className="task-tab" type="button" role="tab"
+          aria-selected={activeTaskType === 'morning'} aria-controls="morning-task-panel"
+          tabIndex={activeTaskType === 'morning' ? 0 : -1} data-task-type="morning"
+          onKeyDown={handleTaskTabKeyDown} onClick={() => selectTaskType('morning')}>早操任务</button>
+      </div>
+      {activeTaskType === 'run' ? <section id="run-task-panel" className="command-panel" role="tabpanel" aria-labelledby="run-task-tab">
         <div className="top-strip">
           <div className="panel-copy"><p className="block-label">Task & Route</p><h2>任务与路线</h2></div>
           <button className="icon-button" type="button" aria-label="刷新任务" disabled={tasksLoading}
@@ -84,8 +116,11 @@ export default function DashboardPage() {
             </p>
           </div>
         )}
-        {!tasksLoading && <StartRunPanel task={task} route={route} />}
-      </section>
+        {!tasksLoading && <StartRunPanel key={`${task?.taskId || ''}:${route?.pointId || ''}`} task={task} route={route} />}
+      </section> : <section id="morning-task-panel" role="tabpanel" aria-labelledby="morning-task-tab">
+        <MorningSignPanel />
+      </section>}
+      <DiscussionComments />
     </main>
   );
 }

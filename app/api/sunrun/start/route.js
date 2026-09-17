@@ -1,5 +1,7 @@
 import { json, readJson } from '../../../../lib/server/http.js';
-import { startRun } from '../../../../lib/server/start-run.js';
+import { executeConfirmedRun } from '../../../../lib/server/confirmed-run.js';
+import { verifyRunPreview } from '../../../../lib/server/run-preview.js';
+import { loginWithToken } from '../../../../lib/server/token-login.js';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
@@ -8,13 +10,21 @@ export async function POST(request) {
   const headers = { 'Cache-Control': 'no-store' };
   try {
     const body = await readJson(request);
-    const result = await startRun({
-      token: body.token,
-      stuNumber: body.stu_number,
-      schoolCode: body.school_code || body.school_id,
+    const profile = await loginWithToken(body.token);
+    const input = {
+      token: profile.token,
+      stuNumber: profile.stuNumber,
+      schoolCode: profile.schoolCode,
       task: body.task,
       route: body.route,
+    };
+    const plan = verifyRunPreview(body.preview_token, {
+      task: input.task,
+      route: input.route,
+      identity: input,
     });
+    const result = await executeConfirmedRun(input, { plan });
+    if (result.mode === 'queued') return json({ success: true, result }, { headers });
     return json({
       success: true,
       result: {

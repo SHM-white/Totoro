@@ -8,6 +8,7 @@ Next.js 全栈练习项目，使用 App Router 承载前端页面和 `/api` 服�
 - React
 - Zustand
 - Lucide React
+- BullMQ + Redis（跑步延迟队列）
 - pnpm
 
 ## 开发
@@ -84,12 +85,47 @@ sudo tail -f /var/log/nginx/error.log
 
 `npm test` 使用本地模拟响应检查登录、任务与跑步请求契约，不请求生产接口。`security-audit/` 为分析材料，不参与项目 lint。
 
+## 早操打卡
+
+登录后的任务页会调用 `/wxxcx/platform/mornSign/getMornSignPaper` 获取当前账号的早操任务，展示任务日期、签到时段、今日完成数、允许范围和点位列表。
+
+选择点位并点击“提交签到”后，服务端会重新获取一次当前任务，使用该点位返回的经纬度和二维码，按小程序 `encryptLong` 协议加密请求，再调用 `/wxxcx/platform/mornSign/morningExercises`。每次点击只提交一次，不会因上游业务拒绝自动重试；提交后会刷新任务，以确认 `dayCompSignCount` 是否变化。
+
 ## 开始跑步
 
-任务页的“开始跑步”会从所选路线生成约 10 米间隔、连续时间戳、符合任务里程和时长的小程序轨迹，并依次执行准备配置、`getRunBegin`、点位查询、`sunRunExercises` 和 `sunRunExercisesDetail`。执行完成后显示场次 ID、路线、里程、用时、配速和步数。必须先取得真实任务与路线；若学校启用了开跑人脸、随机人脸或摄像头检查，流程会在创建场次前停止，不会伪造校验资料。
+任务页会先生成路线、里程、用时、配速和步数预览，确认后再执行真实跑步接口。预览数据以随机 ID 在服务端临时保存十分钟，不包含 Token 或生成后的轨迹点；服务重启后需要重新生成预览。确认开始时使用预览选定的统计参数，以 `Math.random` 生成随机起点、约 2 米 GPS 抖动、8–12 米采样间距和非均匀时间戳，然后依次执行准备配置、`getRunBegin`、点位查询、`sunRunExercises` 和 `sunRunExercisesDetail`，成绩仍然立即提交。
+
+任务没有固定路线时，预览显示“无固定路线”，开始后使用内置路线 1 生成轨迹，同时继续向上游提交空 `lineId` 和空 `sunrunPathPointList`。若学校启用了开跑人脸、随机人脸或摄像头检查，流程会在创建场次前停止，不会伪造校验资料。
 
 `SUNRUN_MINIPROGRAM_BASE_URL` 必须设置为无路径的 HTTPS origin；使用原接口时为 `https://wxxcx.xtotoro.com`。开始跑步会请求 `getRunBegin` 和两段成绩提交接口。
+
+## 跑步延迟队列
+
+“确认开始”固定把任务写入 Redis，并按预览的完整跑步用时延迟执行。到期后，独立 Worker 使用确认时刻作为跑步开始时间，依次调用准备配置、`getRunBegin`、点位查询、`sunRunExercises` 和 `sunRunExercisesDetail` 正式接口。账号和记录是否隔离由正式后端负责，本项目不维护账号白名单或模式开关。
+
+配置 Redis 地址：
+
+```dotenv
+REDIS_URL=redis://127.0.0.1:6379
+```
+
+Worker 执行正式请求需要完整请求资料，因此 Token、任务、路线和跑步计划会作为任务载荷直接保存在 Redis 中。Redis 必须部署在受信网络，禁止暴露到公网，并应配置访问认证与最小权限。
+
+网页与 Worker 必须使用完全相同的配置，并分别作为常驻进程启动：
+
+```bash
+pnpm dev
+pnpm worker:run
+```
+
+生产服务器使用 `totoro.service` 运行网页，使用 `ops/totoro-worker.service` 运行延迟任务 Worker。两者都连接仅监听本机的 Redis；部署脚本切换版本、失败回滚时会同时重启两个服务。
+
+整段正式接口流程不是幂等操作，因此每个 BullMQ 任务只执行一次，不对整个流程自动重试。成功结果保留一小时，失败结果保留一天；前端通过任务状态接口轮询并展示最终场次编号。
 
 ## Markdown 对话框
 
 公共组件 `components/MarkdownDialog.jsx` 使用原生 `<dialog>` 提供焦点管理、Escape 与遮罩关闭。对话内容固定从项目根目录的 `dialog/index.md` 导入，由 `@next/mdx` 在开发或生产构建阶段编译，不会在浏览器运行时读取文件。
+
+## 评论区
+
+任务页底部通过 `@giscus/react` 接入仓库的 GitHub Discussions。评论按页面路径映射到 `General` 分类，首次发言需要使用 GitHub 账号授权 Giscus；仓库需要保持 Discussions 开启并安装 [Giscus GitHub App](https://github.com/apps/giscus)。嵌入区域会从站点同源的 `public/giscus-theme.css` 加载自定义主题，使编辑器、按钮和评论卡片保持项目的纸张底色、粗黑边框与方角风格。
